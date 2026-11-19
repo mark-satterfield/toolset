@@ -1536,10 +1536,11 @@ def _task_steps(run: StepRun, held: Repository) -> StepGroup:
 
 @script_step(STORY_WRITE)
 def story_bead(run: StepRun) -> Completion:
-    """Write the Story bead of one repository, create its journal, and plan its Tasks.
+    """Refresh the Story bead of one repository when it exists, and plan its Tasks.
 
-    The Story is found by its elaboration key under the Epic, so a second run of this step
-    refreshes the Story it wrote and creates no other.
+    The Story is found by its elaboration key under the Epic. A Story bead is created only with
+    its Tasks, by the Task write (``beadwrite.write_story_tasks``), which also creates its
+    journal, so here a Story that does not exist yet has an empty id and nothing is created.
 
     Returns:
         The Story as the dispatch reports it and the write's summary; the repository's Tasks
@@ -1597,8 +1598,9 @@ def story_bead(run: StepRun) -> Completion:
         "repoPath": held.path,
         "parentEpicKey": run.bead,
     }
-    handed: list[Artifact] = handed_on(run.inputs)
-    create_child_journal(run.journal_path.parent, BeadId(identifier), BEAD_TYPE_STORY, [creating(run)], handed)
+    if identifier:
+        handed: list[Artifact] = handed_on(run.inputs)
+        create_child_journal(run.journal_path.parent, BeadId(identifier), BEAD_TYPE_STORY, [creating(run)], handed)
     carried: list[JsonValue] = list(strings(bead["decisionIds"]))
     return Completion(
         artifacts=(

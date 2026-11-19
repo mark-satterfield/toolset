@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 import beadgraph
+import beadwrite
 import elaboration
 import storyedges
 from typeguard import check_type
@@ -72,11 +73,27 @@ def repository_rows(run: StepRun) -> list[dict[str, JsonValue]]:
     return [
         {
             "repository": repository,
-            "spec": {"ok": True, "story": stories[repository]} if repository in stories else {},
+            "spec": {"ok": True, "story": _written_story(stories[repository], decomposed.get(repository))}
+            if repository in stories
+            else {},
             "tasks": decomposed.get(repository, {}),
         }
         for repository in repositories
     ]
+
+
+def _written_story(story: dict[str, JsonValue], tasks: JsonValue) -> dict[str, JsonValue]:
+    """Give a repository's Story with the id its Task write gave it.
+
+    The Story step leaves the id empty for a Story that did not exist yet; the Task write creates
+    it with its Tasks, and its result names it.
+
+    Returns:
+        The Story, with the Task write's id when that write named one.
+
+    """
+    written: JsonValue = json_object(json_object(tasks or {}).get("story") or {}).get("id")
+    return {**story, "id": written} if isinstance(written, str) and written else story
 
 
 def _owner(run: StepRun) -> str:
@@ -120,15 +137,25 @@ def apply_done_rule(run: StepRun) -> Completion:
 
     A repository that lacks its Story or its Tasks, and a Task left unscored, are recorded as
     ``done-rule-carried`` findings for the Epic, and the Epic is marked elaborated with what exists.
+    Every open Story of the Epic that has no Task is closed with reason "no Tasks"
+    (``beadwrite.close_stories_without_tasks``).
 
     Returns:
-        The done rule's result.
+        The done rule's result, with the Stories closed for having no Task (``closedStories``).
 
     """
     enter_phase(run.context, run.agents.emit, FINISH_PHASE, DONE_RULE_STEP)
+    repo: Path = Path(check_type(run.context.args[dispatch_arguments().KEY_BEADS_REPO_PATH], str))
+
+    def close() -> list[str]:
+        graph: beadgraph.Graph = run.tools.portfolio_read(FINISH_PHASE, beadgraph.load, repo)
+        writer: beadgraph.Writer = run.tools.portfolio(FINISH_PHASE, beadgraph.Writer, repo)
+        return run.tools.portfolio(FINISH_PHASE, beadwrite.close_stories_without_tasks, graph, writer, str(run.bead))
+
+    closed: list[str] = run.tools.operation(FINISH_PHASE, close)
     unscored: list[JsonValue] = check_type(run.inputs.value(UNSCORED), list[JsonValue])
     rows: list[dict[str, JsonValue]] = repository_rows(run)
-    rule: dict[str, JsonValue] = done_rule(rows, True, unscored)
+    rule: dict[str, JsonValue] = {**done_rule(rows, True, unscored), "closedStories": list(closed)}
     lacking: list[JsonValue] = check_type(rule["repositories"], list[JsonValue])
     if lacking:
         incomplete: Failure = repository_failure(rows)

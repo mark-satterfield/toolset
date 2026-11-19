@@ -215,6 +215,7 @@ class StoryTasksWrite(TypedDict):
 
     ok: bool
     story: str
+    storyCreated: bool
     tasks: list[WrittenTask]
     warnings: list[str]
     dryRun: bool

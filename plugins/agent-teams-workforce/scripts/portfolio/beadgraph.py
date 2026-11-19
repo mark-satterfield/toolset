@@ -999,6 +999,37 @@ def listed(repo: Path | None, ids: list[str]) -> dict[str, Bead]:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def labels_of(repo: Path | None, bead_id: str) -> list[str]:
+    """Read one bead's labels from one `bd list` call.
+
+    Args:
+        repo: The central repository, or None for the `CONTROL_REPO_ENV` repository.
+        bead_id: The bead.
+
+    Returns:
+        The bead's labels; empty when it has none.
+
+    Raises:
+        GraphError: `bd` failed, did not return an array, or holds no such bead.
+
+    """
+    payload: JsonValue = _bd_json(["list", "--id", bead_id, "--all", "--json", "-n", "0", "--readonly"], repo)
+    record: JsonValue = (
+        next(
+            (item for item in payload if isinstance(item, dict) and item.get("id") == bead_id),
+            None,
+        )
+        if isinstance(payload, list)
+        else None
+    )
+    if not isinstance(record, dict):
+        msg: str = f"`bd list --json` holds no bead {bead_id}"
+        raise GraphError(msg)
+    raw: JsonValue = record.get("labels")
+    return [str(label) for label in raw] if isinstance(raw, list) else []
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def existing(repo: Path | None, ids: list[str]) -> set[str]:
     """Name which of the given ids are beads the tracker holds, from one `bd list` call.
 

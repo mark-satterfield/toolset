@@ -110,7 +110,7 @@ same time, at most `ATW_ORCH_SESSIONS` of them, each running its own steps in or
 | Step | What it does | Records |
 |---|---|---|
 | `elaboration.score` | scores the Epic's Tasks without marking the Epic | value `unscored tasks` |
-| `elaboration.done_rule` | fails unless every repository of the span (the span step's value `repositories`) has its Story, its Tasks with every thing the Story builds cited, and no Task is unscored | value `done rule` |
+| `elaboration.done_rule` | fails unless every repository of the span (the span step's value `repositories`) has its Story, its Tasks with every thing the Story builds cited, and no Task is unscored; closes, with reason "no Tasks", every open Story of the Epic that has no Task (`beadwrite.close_stories_without_tasks`) | value `done rule`, with `closedStories` |
 | `storyedges.story_edges` | writes the dependency edges between the Epic's Stories | value `story edges` |
 | `elaboration.finish` | marks the Epic elaborated | value `lifecycle done` |
 

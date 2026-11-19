@@ -111,7 +111,7 @@ from orchestrator.flows.spec_authoring import design_system, items_by_story
 
 # isort: split
 # The journal modules put the pipeline-contracts scripts directory on sys.path.
-from step_journal_contract import BEAD_TYPE_TASK, KIND_VALUE, BeadId
+from step_journal_contract import BEAD_TYPE_STORY, BEAD_TYPE_TASK, KIND_VALUE, BeadId
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -127,6 +127,7 @@ GAPS_BEFORE: Final = "gaps before the correction"
 RETIRED: Final = "tasks retired"
 TASK_WARNINGS: Final = "task warnings"
 TASKS_WRITTEN: Final = "tasks written"
+WRITTEN_STORY: Final = "written story"
 SCHEMAS: Final = "skills/artifact-handoff/schemas"
 TASKS_SCHEMA: Final = "tasks.schema.json"
 TASKS_CORRECTION_SCHEMA: Final = "tasks-correction.schema.json"
@@ -260,7 +261,7 @@ def context(run: StepRun) -> Completion:
     def read() -> list[dict[str, JsonValue]]:
         return run.tools.portfolio_read(TASK_CONTEXT, beadgraph.children, control, story, "task")
 
-    records: list[dict[str, JsonValue]] = run.tools.operation(TASK_CONTEXT, read)
+    records: list[dict[str, JsonValue]] = run.tools.operation(TASK_CONTEXT, read) if story else []
     existing: list[JsonValue] = [
         task_facts(bead)
         for bead in (beadgraph.bead_of(record) for record in records)
@@ -861,10 +862,12 @@ def _write_tasks(run: StepRun, stage: str, keys: list[str] | None) -> Completion
     ownership lock, after one fresh read of beads finds that no other Epic came to own an entry
     the span planned for this Epic; otherwise nothing is written and the span runs again
     (``build_ownership.owned_write``). The Tasks the Story lacks are created in one transaction
-    (``beadwrite.write_story_tasks``).
+    (``beadwrite.write_story_tasks``), with the Story bead when it does not exist yet; the step
+    that creates the Story creates its journal. With no Task to write, no Story is created.
 
     Returns:
-        One value ``task`` per Task, as the dispatch reports it, and the write's warnings.
+        One value ``task`` per Task, as the dispatch reports it, the Story the Tasks are under
+        (value ``written story``, its id empty when there is none), and the write's warnings.
 
     """
     held: Repository = repository(run.inputs)
@@ -892,6 +895,15 @@ def _write_tasks(run: StepRun, stage: str, keys: list[str] | None) -> Completion
     written: dict[str, JsonValue] = run.tools.operation(stage, attempt)
     tasks: list[dict[str, JsonValue]] = objects(written["tasks"])
     name: str = Path(held.path).name
+    story_id: str = check_type(written["story"], str)
+    if written.get("storyCreated") is True:
+        create_child_journal(
+            run.journal_path.parent,
+            BeadId(story_id),
+            BEAD_TYPE_STORY,
+            [creating(run)],
+            handed_on(run.inputs),
+        )
     for task in tasks:
         create_child_journal(
             run.journal_path.parent,
@@ -903,6 +915,7 @@ def _write_tasks(run: StepRun, stage: str, keys: list[str] | None) -> Completion
     return Completion(
         artifacts=(
             *(value_artifact(TASK, task) for task in tasks),
+            value_artifact(WRITTEN_STORY, {"id": story_id}),
             value_artifact(TASK_WARNINGS, written["warnings"]),
         ),
     )
@@ -1012,6 +1025,10 @@ def record(run: StepRun) -> Completion:
     """
     held: Repository = repository(run.inputs)
     story: dict[str, JsonValue] = json_object(run.inputs.value(STORY))
+    written_ids: list[str] = [
+        check_type(json_object(value).get("id", ""), str) for value in run.inputs.values(WRITTEN_STORY)
+    ]
+    story_id: JsonValue = next((written for written in written_ids if written), story["id"])
     planned: dict[str, JsonValue] = json_object(run.inputs.value(TASK_PLAN_RECORD))
     tasks: list[dict[str, JsonValue]] = objects(run.inputs.values(TASK))
     counts: list[dict[str, JsonValue]] = objects(run.inputs.values(TASK_EDGE_COUNTS))
@@ -1031,7 +1048,7 @@ def record(run: StepRun) -> Completion:
     result: dict[str, JsonValue] = {
         "ok": True,
         "repoPath": held.path,
-        "story": {"id": story["id"], "elabKey": story["elabKey"]},
+        "story": {"id": story_id, "elabKey": story["elabKey"]},
         "tasks": rows,
         "edges": edges,
         "coverage": planned["coverage"],

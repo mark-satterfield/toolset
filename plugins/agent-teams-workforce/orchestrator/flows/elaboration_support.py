@@ -269,7 +269,9 @@ def _repository_gap(row: dict[str, JsonValue]) -> dict[str, JsonValue] | None:
     tasks: dict[str, JsonValue] = json_object(row.get("tasks", {}))
     story: dict[str, JsonValue] = json_object(spec.get("story", {}))
     if not spec.get("ok") or not story.get("id"):
-        return {"repository": row["repository"], "reason": "missing Story", "result": spec}
+        no_tasks: bool = bool(tasks.get("ok")) and not tasks.get("tasks")
+        reason: str = "no Tasks, so no Story" if no_tasks else "missing Story"
+        return {"repository": row["repository"], "reason": reason, "result": tasks if no_tasks else spec}
     task_rows: list[dict[str, JsonValue]] = check_type(
         tasks.get("tasks", []),
         list[dict[str, JsonValue]],

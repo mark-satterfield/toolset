@@ -988,17 +988,6 @@
       ],
       "description": "The build_prerequisites producer rows depscore.py replace-tasks took off other open Tasks because they named a Task of this Story it deleted: each {consumer, row, buildsEntries}, buildsEntries the deleted Task's builds_entries. The Story's next retire-superseded step points each row at the written Tasks that build one of those entries, drops a row none builds, and removes the key."
     },
-    "story_no_build_work": {
-      "type": "string",
-      "enum": [
-        "true",
-        "false"
-      ],
-      "x-groups": [
-        "STORY_KEYS"
-      ],
-      "description": "true when the Story's Task write found a plan with no Task and no work the Story builds (hierarchy.work_items empty), so the Story deploys with no Task; false once it has a Task or work. Written by beadwrite.write_story_tasks; the driver deploys a Story with no Task only when it reads true."
-    },
     "wsjf": {
       "type": "string",
       "x-groups": [

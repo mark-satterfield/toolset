@@ -130,7 +130,6 @@ from bead_metadata import (
     KEY_SPEC_PATH,
     KEY_SPEC_PATHS,
     KEY_SPEC_SECTIONS,
-    KEY_STORY_NO_BUILD_WORK,
     KEY_STORY_REPLACED_PREREQUISITES,
     KEY_SURFACES,
     KEY_TEST_STRATEGY,
@@ -375,41 +374,6 @@ def task_metadata(task: Task) -> dict[str, str]:
         m[KEY_SPEC_PATH] = task.spec_paths[0]
         m[KEY_SPEC_PATHS] = _json(task.spec_paths)
     return m
-
-
-def _create_args(  # ruff: ignore[too-many-arguments] - one `bd create` flag each
-    kind: str,
-    *,
-    title: str,
-    text: str,
-    parent: str,
-    acceptance: list[str],
-    notes: str | None,
-    metadata: dict[str, str],
-) -> list[str]:
-    """Return the `bd create` arguments for one bead.
-
-    Returns:
-        The arguments.
-
-    """
-    args: list[str] = [
-        "create",
-        "--silent",
-        "--type",
-        kind,
-        "--title",
-        title,
-        "--description",
-        text,
-        "--parent",
-        parent,
-    ]
-    if acceptance:
-        args += ["--acceptance", "\n".join(acceptance)]
-    if notes:
-        args += ["--notes", notes]
-    return [*args, "--metadata", _json(metadata)]
 
 
 def _refresh(
@@ -694,12 +658,13 @@ def plan_tasks(files: StoryFiles, root: Path | None, packages_dir: str | None = 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def write_story(graph: Graph, writer: Writer, epic_id: str, files: StoryFiles, *, root: Path | None) -> StoryWrite:
-    """Write one repository's Story under the Epic from its saved Story document.
+    """Refresh one repository's Story under the Epic from its saved Story document, when it exists.
 
     The Story is found by its elaboration key `story:<slug>` among the Epic's Stories: one that
     exists is refreshed where it differs and is not closed (a Story is in progress once a build has
-    worked on its branch, and a re-elaboration rewrites it in place), and is never created a second
-    time.
+    worked on its branch, and a re-elaboration rewrites it in place). A Story that does not exist
+    is not created here: `write_story_tasks` creates it together with its Tasks, so a Story bead
+    never exists without a Task, and its id is empty until then.
 
     Args:
         graph: The tracker graph, read with descriptions.
@@ -724,22 +689,12 @@ def write_story(graph: Graph, writer: Writer, epic_id: str, files: StoryFiles, *
     )):
         raise TypeError(_ARGUMENT_ERROR)
     slug: str = files.slug
-    repo: str = files.repo
     story: hierarchy.Story = read_story(files, root)
     bead: beadgraph.Bead | None = _story_of(graph, epic_id, slug)
     existing: list[ExistingTask] = []
     if bead is None:
-        args: list[str] = _create_args(
-            "story",
-            title=story.title,
-            text=story.description,
-            parent=epic_id,
-            acceptance=story.acceptance,
-            notes=f"{KEY_REPO_PATH}: {repo}",
-            metadata=story.metadata,
-        )
-        story_id: str = writer.create(args, story.metadata[KEY_ELAB_KEY])
-        action: str = "created"
+        story_id: str = ""
+        action: str = "unwritten"
     else:
         story_id = bead.id
         wrote: bool = not bead.closed and _refresh(
@@ -778,7 +733,7 @@ def write_story(graph: Graph, writer: Writer, epic_id: str, files: StoryFiles, *
             "id": story_id,
             "elabKey": story.metadata[KEY_ELAB_KEY],
             "action": action,
-            "created": int(action == "created"),
+            "created": 0,
             "updated": int(action == "updated"),
         },
     }
@@ -1386,6 +1341,36 @@ def write_task(
     }
 
 
+NO_TASKS_REASON: Final = "no Tasks"
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def close_stories_without_tasks(graph: Graph, writer: Writer, epic_id: str) -> list[str]:
+    """Close, with reason "no Tasks", every open Story of the Epic that has no Task.
+
+    A Story exists only with its Tasks, so an open Story left with no Task when the Epic's
+    elaboration finishes is closed, never deleted.
+
+    Args:
+        graph: The tracker graph.
+        writer: The tracker writer; a dry-run writer records the writes instead.
+        epic_id: The Epic.
+
+    Returns:
+        The Stories closed, in id order.
+
+    """
+    empty: list[str] = [
+        story.id
+        for story in _children(graph, epic_id, "story")
+        if not story.closed
+        and not any(bead.parent == story.id and bead.kind == "task" for bead in graph.beads.values())
+    ]
+    for story_id in empty:
+        writer.bd(["close", story_id, "--reason", NO_TASKS_REASON])
+    return empty
+
+
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def write_story_tasks(
     writer: Writer,
@@ -1396,11 +1381,14 @@ def write_story_tasks(
     """Write a Story's Task beads at once from its saved Tasks file; their edges are written apart.
 
     One plan read, one read of the Story and of its Task beads, then every Task the Story lacks in
-    one `bd create --graph` transaction. Each Task is found by its elaboration key among the Story's
-    Task beads: one that exists is refreshed where it differs (one `bd update` each), or left as it
-    is once building has started, and is never created a second time, so a rerun creates nothing.
-    A created Task carries the Story's labels, as `bd create --parent` gives a child its parent's.
-    `write_story_task_edges` sets the edges once every Task of the Story is written.
+    one `bd create --graph` transaction. A Story bead that does not exist yet is created in that
+    same transaction, with its Tasks as its children, so a Story never exists without a Task; when
+    there is no Task to create, no Story is created and the result's ``story`` is empty. Each Task
+    is found by its elaboration key among the Story's Task beads: one that exists is refreshed where
+    it differs (one `bd update` each), or left as it is once building has started, and is never
+    created a second time, so a rerun creates nothing. A created Task carries the Story's labels, as
+    `bd create --parent` gives a child its parent's. `write_story_task_edges` sets the edges once
+    every Task of the Story is written.
 
     Returns:
         Each Task's identity and content action, in build order, and the warnings.
@@ -1422,7 +1410,8 @@ def _graph_node(task: Task, text: str, metadata: dict[str, str], parent: str, in
         task: The Task.
         text: Its description.
         metadata: Its metadata.
-        parent: Its Story bead.
+        parent: Its Story bead, or the Story's elaboration key (``story:<slug>``) when the same
+            transaction creates the Story.
         inherited: The Story's labels, which `bd create --parent` gives a child.
 
     Returns:
@@ -1435,10 +1424,10 @@ def _graph_node(task: Task, text: str, metadata: dict[str, str], parent: str, in
         "title": task.title,
         "type": "task",
         "description": text,
-        "parent_id": parent,
         "notes": f"{KEY_REPO_PATH}: {task.repo_path}",
         "metadata": dict(metadata),
     }
+    node["parent_key" if parent.startswith("story:") else "parent_id"] = parent
     if task.acceptance:
         node["acceptance_criteria"] = "\n".join(task.acceptance)
     if labels:
@@ -1474,7 +1463,6 @@ class _StoryTaskWriter:
     root: Path | None
     story_id: str
     story_labels: list[str]
-    story_no_build_work: str
     priority: dict[str, JsonValue]
     beads: list[Bead]
     keyed: dict[str, Bead]
@@ -1520,9 +1508,8 @@ class _StoryTaskWriter:
     def _read_story(self) -> None:
         """Read the Story bead, its labels and its Task beads.
 
-        Raises:
-            HierarchyError: The Epic has no Story for the repository.
-
+        A Story that does not exist yet has an empty id, the Epic's labels (the labels `bd create
+        --parent` would give it) and no Task bead; :meth:`execute` creates it with its Tasks.
         """
         records: list[JsonObject] = children(self.writer.repo, self.epic_id, "story")
         by_id: dict[str, JsonObject] = {str(r["id"]): r for r in records}
@@ -1530,11 +1517,14 @@ class _StoryTaskWriter:
             f"story:{self.files.slug}",
         )
         if story is None:
-            msg: str = f"{self.epic_id} has no Story story:{self.files.slug}: its Story is written before its Tasks"
-            raise HierarchyError(msg)
+            self.story_id = ""
+            self.story_labels = beadgraph.labels_of(self.writer.repo, self.epic_id)
+            self.priority = {}
+            self.keyed = {}
+            self.beads = []
+            return
         self.story_id = story.id
         self.story_labels = str_list(by_id[story.id].get("labels") or [])
-        self.story_no_build_work = story.metadata.get(KEY_STORY_NO_BUILD_WORK, "")
         tasks: list[JsonObject] = children(self.writer.repo, self.story_id, "task")
         self.priority = {str(r["id"]): r.get("priority") for r in tasks}
         beads: list[Bead] = sorted((bead_of(r) for r in tasks), key=lambda b: b.id)
@@ -1571,19 +1561,22 @@ class _StoryTaskWriter:
                     self.priority.get(bead.id) if bead else DEFAULT_PRIORITY,
                 )
             if bead is None:
-                nodes.append(_graph_node(task, text, meta, self.story_id, self.story_labels))
+                parent: str = self.story_id or f"story:{self.files.slug}"
+                nodes.append(_graph_node(task, text, meta, parent, self.story_labels))
             else:
                 done[task.key] = _written(task, bead.id, self._existing(task, bead, text, meta))
-        ids: dict[str, str] = self.writer.create_many(nodes)
+        story_node: JsonObject | None = self._story_node() if nodes and not self.story_id else None
+        ids: dict[str, str] = self.writer.create_many([story_node, *nodes] if story_node else nodes)
+        if story_node is not None:
+            self.story_id = ids[str(story_node["key"])]
         written: list[WrittenTask] = [
             done.get(task.key) or _written(task, ids[task.elab_key or task.key], "created") for task in chosen
         ]
-        if self.options.get("keys") is None:
-            self._record_build_work(tasks)
         counts: Counter[str] = Counter(task["action"] for task in written)
         return {
             "ok": True,
             "story": self.story_id,
+            "storyCreated": story_node is not None,
             "tasks": written,
             "warnings": warnings,
             "dryRun": self.writer.dry_run,
@@ -1597,15 +1590,31 @@ class _StoryTaskWriter:
             },
         }
 
-    def _record_build_work(self, tasks: list[Task]) -> None:
-        """Record on the Story whether it has no build work: no Task planned and nothing it builds.
+    def _story_node(self) -> JsonObject:
+        """Return the `bd create --graph` node of the Story, created in the transaction that creates its Tasks.
 
-        The driver deploys a Story with no Task only when this reads true; a Story left with no
-        Task while it has work is held instead. Written only when the value changes.
+        The node carries what the Story document gives it and the Epic's labels; each Task node of
+        the same transaction names it as its parent (``parent_key``).
+
+        Returns:
+            The node, keyed by the Story's elaboration key.
+
         """
-        value: str = "true" if not tasks and not work_items(self.files) else "false"
-        if value != (self.story_no_build_work or "false"):
-            self.writer.metadata(self.story_id, {KEY_STORY_NO_BUILD_WORK: value})
+        story: hierarchy.Story = read_story(self.files, self.root)
+        node: JsonObject = {
+            "key": story.metadata[KEY_ELAB_KEY],
+            "title": story.title,
+            "type": "story",
+            "description": story.description,
+            "parent_id": self.epic_id,
+            "notes": f"{KEY_REPO_PATH}: {self.files.repo}",
+            "metadata": dict(story.metadata),
+        }
+        if story.acceptance:
+            node["acceptance_criteria"] = "\n".join(story.acceptance)
+        if self.story_labels:
+            node["labels"] = list(self.story_labels)
+        return node
 
     def _existing(self, task: Task, bead: Bead, text: str, meta: dict[str, str]) -> str:
         """Retain or refresh a Task that has a bead.
@@ -1756,7 +1765,8 @@ def write_story_task_edges(
 
     Raises:
         TypeError: An argument violates the declared input contract.
-        HierarchyError: The Epic has no Story for the repository, or a Task is not written.
+        HierarchyError: The Epic has no Story for the repository while its plan has a Task, or a
+            Task is not written.
 
     """
     if not all((
@@ -1774,8 +1784,20 @@ def write_story_task_edges(
     story: Bead | None = _keyed(
         sorted((bead_of(r) for r in children(writer.repo, epic_id, "story")), key=lambda b: b.id),
     ).get(f"story:{files.slug}")
+    if story is None and not tasks:
+        nothing: EdgeCounts = {"added": 0, "removed": 0, "standing": 0}
+        return {
+            "ok": True,
+            "story": "",
+            "edges": nothing,
+            "outsideBlockers": {},
+            "warnings": take_warnings(),
+            "dryRun": writer.dry_run,
+            "planned": writer.planned,
+            "summary": {**nothing, "warnings": 0},
+        }
     if story is None:
-        msg = f"{epic_id} has no Story story:{files.slug}: its Story is written before its Tasks"
+        msg = f"{epic_id} has no Story story:{files.slug}: its Story is written with its Tasks"
         raise HierarchyError(msg)
     beads: list[Bead] = sorted((bead_of(r) for r in children(writer.repo, story.id, "task")), key=lambda b: b.id)
     matched: dict[str, Bead]
@@ -2916,7 +2938,7 @@ def retire_superseded_tasks(  # ruff: ignore[too-many-arguments] - the caller's 
 
     Raises:
         TypeError: An argument violates the declared input contract.
-        HierarchyError: The Epic has no Story for the repository.
+        HierarchyError: The Epic has no Story for the repository while its plan has a Task.
 
     """
     dependent: Bead
@@ -2933,6 +2955,18 @@ def retire_superseded_tasks(  # ruff: ignore[too-many-arguments] - the caller's 
     tasks: list[Task] = plan_tasks(files, root, packages_dir)
     take_warnings()
     story: Bead | None = _story_of(graph, epic_id, files.slug)
+    if story is None and not tasks:
+        return {
+            "ok": True,
+            "story": "",
+            "deleted": [],
+            "repointed": [],
+            "prerequisites": [],
+            "warnings": take_warnings(),
+            "dryRun": writer.dry_run,
+            "planned": writer.planned,
+            "summary": {"deleted": 0, "repointed": 0, "prerequisites": 0, "warnings": 0},
+        }
     if story is None:
         msg: str = f"{epic_id} has no Story story:{files.slug}"
         raise HierarchyError(msg)

@@ -61,10 +61,11 @@ merged and the Story closed.
 detail in the sections that follow.
 **Sources:** the owner: "keeper is what knows to deploy a story."; the code, which is the source for
 `keeper.py` and `supervisor.py`: `keeper.py` runs `supervisor.py`, whose deploy lane
-(`selection.select_deploy`, `storyorder.gate`) takes each Story whose Tasks are all closed, and a
-Story with no Task only when its Task write recorded `story_no_build_work` true (the plan has no
-Task and the Story builds nothing, `beadwrite.write_story_tasks`); any other Story with no Task is
-held with a `story-without-tasks` finding and nothing is dispatched for it. It takes one
+(`selection.select_deploy`, `storyorder.gate`) takes a Story only when it has at least one Task
+and every Task of it is closed (`storyorder.deployable`), before any deploy step, `cdk` command or
+agent runs; a Story with no Task is never deployed. Elaboration creates a Story bead only in the
+transaction that creates its Tasks (`beadwrite.write_story_tasks`), and its done rule closes, with
+reason "no Tasks", any open Story of the Epic left with no Task. It takes one
 Story at a time per repository, and runs its deploy through `storydeploy.run`, whose
 `deploy:close` step closes the Story bead (`ops/sdlc-automation/keeper.py`, `supervisor.py`, `selection.py`, `storyorder.py` and `storydeploy.py`); the requirements row for Deploy:
 "A Story whose Tasks are all built" producing "The Story's repository published and deployed to
