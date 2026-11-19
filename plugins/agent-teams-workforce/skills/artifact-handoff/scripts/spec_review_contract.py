@@ -52,6 +52,7 @@ class Finding(TypedDict):
     observation: str
     correction: str
     doneWhen: str
+    constitutive: bool
 
 
 class SpecReview(TypedDict):

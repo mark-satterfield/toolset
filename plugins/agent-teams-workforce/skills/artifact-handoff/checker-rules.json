@@ -405,8 +405,9 @@
         "orchestrator/flows/spec_review.py#correction.check",
         "orchestrator/flows/spec_review.py#correction.account_check",
         "orchestrator/flows/spec_authoring.py#document_check",
-        "orchestrator/flows/spec_authoring.py#document_check.check",
-        "orchestrator/flows/spec_authoring.py#document_check.criteria_check",
+        "orchestrator/flows/spec_authoring.py#document_checker",
+        "orchestrator/flows/spec_authoring.py#document_checker.check",
+        "orchestrator/flows/spec_authoring.py#document_checker.criteria_check",
         "orchestrator/flows/spec_authoring.py#refuse_foreign",
         "orchestrator/flows/spec_authoring.py#used_as_built",
         "orchestrator/flows/spec_authoring.py#criteria_used_as_built",
@@ -528,7 +529,8 @@
       ],
       "notRules": [
         "decisionIds is empty",
-        "Definition of Done statement"
+        "Definition of Done statement",
+        "check needs the matrix"
       ]
     },
     {

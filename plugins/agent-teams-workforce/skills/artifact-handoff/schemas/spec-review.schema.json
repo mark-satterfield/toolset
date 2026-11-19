@@ -18,7 +18,7 @@
       "description": "One defect in one specification document, measured against one specs-and-Tasks criterion.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "document", "criterion", "location", "observation", "correction", "doneWhen"],
+      "required": ["id", "document", "criterion", "location", "observation", "correction", "doneWhen", "constitutive"],
       "properties": {
         "id": {
           "description": "The reviewer's name for this finding, unique among the findings sent to the authors: F1, F2 and so on from the spec review; D1, D2 and so on from the data-model access-pattern review.",
@@ -52,6 +52,10 @@
           "description": "The condition that shows the correction is made.",
           "type": "string",
           "minLength": 1
+        },
+        "constitutive": {
+          "description": "Whether the finding breaks a hard rule, the only kind an author corrects: true when the document does not meet the criterion, so a Task built from it would be wrong or could not be built (a detail missing, contradicting the architecture, the TRD or another of the documents, invalid as stated, or an item the acceptance-criteria rule excludes); false when the criterion is met and the finding names a better way to meet it. A false (competitive) finding is recorded as a finding of the Epic and carried forward; no author works on it and no round follows it.",
+          "type": "boolean"
         }
       }
     },

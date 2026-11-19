@@ -182,14 +182,17 @@ same contract with ids D1, D2 and so on, every finding on the data-model documen
 own ids are F1, F2 and so on, and its step adds the data-model review's findings to its own. The
 correction and revision steps and the decider are handed the data-model review beside the review. The step
 keeps a finding only when its criterion id is an id of the specs-and-Tasks level (`implementation`) of
-`skills/effective-architecture/review-criteria.json`. What follows is planned by the
-step whose result calls for it, in at most three rounds after the review; the author steps of
+`skills/effective-architecture/review-criteria.json`, and sends an author only a constitutive one
+(the finding's `constitutive` field): a competitive finding is recorded as a `contract-finding` of
+the Epic (`core.findings`) and carried forward. The review runs once; no review follows the rounds.
+What follows is planned by the step whose result calls for it, in at most three rounds after the review,
+only for constitutive findings; the author steps of
 one round are consecutive agent steps with done inputs, so their sessions run together:
 
 | Step | Planned when | Performed by | Records |
 |---|---|---|---|
-| Review | always | `spec-reviewer` | file `spec review`; value `spec review findings` (the findings of the review and of the data-model review, when there is one, held against an implementation criterion); value `spec review findings dropped` (the others, which go no further) |
-| Correct the documents of one author for the review's findings (round 1, planned by the review) | one of its documents has a finding, or is derived from a document that has one | the agent that wrote the documents, in one session for all of them, continuing the session in which it wrote them | file `spec correction`, each document again, value `spec review document worked on` (its documents and which findings it disputed), value `warnings` |
+| Review | always | `spec-reviewer` | file `spec review`; value `spec review findings` (the constitutive findings of the review and of the data-model review, when there is one, held against an implementation criterion); value `spec review findings carried` (the ids of the competitive ones, recorded as findings of the Epic); value `spec review findings dropped` (the others, which go no further) |
+| Correct the documents of one author for the review's findings (round 1, planned by the review) | one of its documents has a constitutive finding, or is derived from a document that has one | the agent that wrote the documents, in one session for all of them, continuing the session in which it wrote them | file `spec correction`, each document again, value `spec review document worked on` (its documents and which findings it disputed), value `warnings` |
 | Decide whether a finding is disputed (after round 1) | round 1 has a step | script `spec_review.settle` | plans the decider when a record of round 1 names a disputed finding |
 | Rule on the disputed findings (round 2) | an author disputed a finding of its own document | `review-dispute-decider` | file `spec ruling`, value `spec review findings upheld`, value `warnings` |
 | Revise the documents of one author to the ruling (round 3, planned by the decider) | one of its documents has an upheld finding, or is derived from a document that has one | the agent that wrote the documents, in one session for all of them | file `spec revision`, each document again, value `spec review document worked on`, value `warnings` |

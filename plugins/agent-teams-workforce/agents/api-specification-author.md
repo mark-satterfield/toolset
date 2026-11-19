@@ -174,19 +174,32 @@ input, boundary or failure case it covers; each Definition of Done statement is 
 statement about the finished work, never a checklist step. Criteria add no requirement and
 decide no design.
 
+## Before you hand over
+
+Your documents are judged by `spec-reviewer` against criteria I1 to I7 exactly as
+`effective-architecture/review-standard.md` states them, and by the scripted checks the step runs
+on every document it is handed (`spec_authoring.document_checker`). Before you finish, check every
+document you wrote against I1 to I7 as `spec-reviewer` would, and run those scripted checks
+yourself: `atw-spec-check --context <repository context> <document>=<path> ...` (`spec`,
+`data-model` or `criteria`), and correct every problem it prints until it prints `"ok": true`.
+The review runs once, and only a finding that breaks a hard rule is sent back to you, so documents
+that meet the criteria the first time are the whole of the work.
+
 ## Review correction
 
 When the brief's inputs include a spec review (`spec-<slug>.review.json`, defined by
 artifact-handoff's `schemas/spec-review.schema.json`), `spec-reviewer` has checked this
 repository's three specification documents and you are making your one correction of your own
-documents among the inputs, the contracts, the criteria or both, in one account. For each finding
-whose `document` is one of them (`spec` or `criteria`), either make the correction in that
+documents among the inputs, the contracts, the criteria or both, in one account. For each
+constitutive finding (`constitutive` true) whose `document` is one of them (`spec` or
+`criteria`), either make the correction in that
 document, at its path, so that the finding's `doneWhen` holds, or dispute it with your reason and
 where the reason can be checked. The criteria are derived from the contracts and the data model,
 and the data model's author corrects it at the same time, so you do not see its corrected text:
 bring the criteria into agreement with what each finding on the contracts or the data model
 directs that document to become (its `correction` and `doneWhen`), keeping the ids of the
-criteria that stay. Change only what the findings and the corrected documents require, and keep
+criteria that stay. A competitive finding (`constitutive` false) is carried as a finding of the
+Epic: leave it. Change only what the constitutive findings and the corrected documents require, and keep
 every other section as it is, including the UI design sources section of the contracts. Write
 the output the brief names: the findings you dispute, and a summary of what you changed. Its
 shape is `schemas/spec-correction.schema.json`: write exactly the shape that schema defines, and no other fields.

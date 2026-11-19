@@ -2,10 +2,14 @@
 
 One reviewer session reads the documents against the specs-and-Tasks criteria; for a repository
 whose stacks hold a DynamoDB store, a second reviewer session reads the data-model document's
-DynamoDB access patterns first, and its findings join the review's. After the review at most
-three rounds of sessions follow, each round's sessions running together:
+DynamoDB access patterns first, and its findings join the review's. The review runs once and is
+never repeated. Only a constitutive finding (one that breaks a hard rule, the finding's
+``constitutive`` field) is worked on; a competitive finding is recorded as a finding of the Epic
+(``core.findings``) and carried forward, and no session works on it. After the review at most three
+rounds of sessions follow, and only for constitutive findings, each round's sessions running
+together:
 
-1. One correction: every document with a finding goes once to its author, and the criteria go
+1. One correction: every document with a constitutive finding goes once to its author, and the criteria go
    to theirs as well when a document they are derived from has a finding, all in one round. An
    author works on all its documents of the round in one session: the contracts author writes
    the criteria too.
@@ -41,6 +45,7 @@ from spec_review_contract import (
 )
 
 from orchestrator.core.agents import check_files, strict_json
+from orchestrator.core.findings import record_for_run
 from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.journal_registry import agent_step, script_step
 from orchestrator.core.journal_steps import (
@@ -120,6 +125,7 @@ AUTHOR_OF: Final[dict[SpecDocument, str]] = {
 REVIEW: Final = "spec review"
 FINDINGS: Final = "spec review findings"
 DROPPED: Final = "spec review findings dropped"
+CARRIED: Final = "spec review findings carried"
 CORRECTION: Final = "spec correction"
 REVISION: Final = "spec revision"
 WORKED: Final = "spec review document worked on"
@@ -284,6 +290,21 @@ def settle(run: StepRun) -> Completion:
     return Completion(add=(StepGroup((NewStep(plan, {WORK: "ruling"}),)),))
 
 
+def _carry(run: StepRun, finding: Finding, review: Path) -> str:
+    """Record a competitive review finding as a finding of the Epic, carried forward with no round.
+
+    Returns:
+        The finding's id.
+
+    """
+    detail: str = (
+        f"competitive spec review finding {finding['id']} ({finding['criterion']}) on the {finding['document']} "
+        f"document at {finding['location']}: {finding['observation']} Suggested: {finding['correction']}"
+    )
+    record_for_run(run, str(run.bead), kind="contract-finding", detail=detail, evidence=(str(review),))
+    return finding["id"]
+
+
 def review_check(prefix: str, documents: frozenset[SpecDocument]) -> OutputValidator:
     """Give the check a review must pass: the review contract, with its finding ids and documents.
 
@@ -326,8 +347,9 @@ def reviewer(run: StepRun) -> AgentLaunch:
     """Build the one reviewer session of a repository's specification documents.
 
     Returns:
-        The launch: the review as output; when it is accepted, the findings held against an
-        implementation criterion are recorded and the first author step they call for is planned.
+        The launch: the review as output; when it is accepted, the constitutive findings held
+        against an implementation criterion are recorded and the first author step they call for
+        is planned, and the competitive ones are recorded as findings of the Epic and carried.
 
     """
     held: Repository = repository(run.inputs)
@@ -344,12 +366,21 @@ def reviewer(run: StepRun) -> AgentLaunch:
         allowed: frozenset[str] = frozenset(
             entry.id for entry in load_criteria(criteria).at_level(LEVEL_IMPLEMENTATION)
         )
+        held: list[Finding] = [finding for finding in found if finding["criterion"] in allowed]
         kept: list[JsonValue] = [
-            _finding(finding["id"], finding["document"]) for finding in found if finding["criterion"] in allowed
+            _finding(finding["id"], finding["document"]) for finding in held if finding["constitutive"]
+        ]
+        carried: list[JsonValue] = [
+            _carry(accepted, finding, output) for finding in held if not finding["constitutive"]
         ]
         dropped: list[JsonValue] = [finding["id"] for finding in found if finding["criterion"] not in allowed]
         return Completion(
-            artifacts=(file_artifact(REVIEW, output), value_artifact(FINDINGS, kept), value_artifact(DROPPED, dropped)),
+            artifacts=(
+                file_artifact(REVIEW, output),
+                value_artifact(FINDINGS, kept),
+                value_artifact(CARRIED, carried),
+                value_artifact(DROPPED, dropped),
+            ),
             add=_round(accepted, WORK_CORRECTION, objects(kept)),
         )
 

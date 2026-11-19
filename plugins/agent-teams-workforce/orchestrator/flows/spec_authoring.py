@@ -460,14 +460,40 @@ def document_check(run: StepRun, name: str) -> OutputValidator:
     """Give the check a spec document must pass each time its author has written it.
 
     Returns:
+        The check :func:`document_checker` gives, from the run's repository context, matrix and
+        architecture root.
+
+    """
+    held_context: Path | None = run.inputs.optional_file(CONTEXT)
+    additions: set[str] | None = None if held_context is None else addition_entries(held_context)
+    if name == CRITERIA:
+        return document_checker(name, additions, None, architecture_root(run))
+    matrix: Matrix = run.tools.portfolio_read(name, read_matrix, matrix_path(None, os.environ))
+    return document_checker(name, additions, matrix, architecture_root(run))
+
+
+def document_checker(name: str, additions: set[str] | None, matrix: Matrix | None, arch: Path) -> OutputValidator:
+    """Give the check a spec document must pass, the one home of the scripted spec document checks.
+
+    The step runs it on each document its author hands over (:func:`document_check`), and the
+    author runs it itself before handing over (``spec_check``, ``atw-spec-check``).
+
+    Args:
+        name: The document's artifact name: :data:`SPEC`, :data:`DATA_MODEL` or :data:`CRITERIA`.
+        additions: The ``addition`` entries of the repository context, or None without a context.
+        matrix: The matrix the citations are checked against; unused for the criteria.
+        arch: The architecture root the citations' paths are relative to.
+
+    Returns:
         The check: every architecture citation of the contracts and of the data model names a
         document and heading the matrix holds; the criteria document has the structure Tasks
         cite (:func:`criteria_document`); and every entry the document's ``usedAsBuilt`` names
         is an ``addition`` entry of the repository context (:func:`refuse_foreign`).
 
+    Raises:
+        ValueError: A contracts or data-model check is asked for without a matrix.
+
     """
-    held_context: Path | None = run.inputs.optional_file(CONTEXT)
-    additions: set[str] | None = None if held_context is None else addition_entries(held_context)
     if name == CRITERIA:
 
         def criteria_check(path: Path) -> None:
@@ -475,11 +501,13 @@ def document_check(run: StepRun, name: str) -> OutputValidator:
             refuse_foreign(path, criteria_used_as_built(path), additions)
 
         return criteria_check
-    matrix: Matrix = run.tools.portfolio_read(name, read_matrix, matrix_path(None, os.environ))
-    arch: Path = architecture_root(run)
+    if matrix is None:
+        message: str = f"the {name} document's check needs the matrix"
+        raise ValueError(message)
+    held: Matrix = matrix
 
     def check(path: Path) -> tuple[list[str], list[str]]:
-        found: tuple[list[str], list[str]] = document(path, matrix, SPEC_FRONT_MATTER, arch)
+        found: tuple[list[str], list[str]] = document(path, held, SPEC_FRONT_MATTER, arch)
         refuse_foreign(path, used_as_built(path), additions)
         return found
 

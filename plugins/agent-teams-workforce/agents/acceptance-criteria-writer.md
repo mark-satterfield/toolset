@@ -70,10 +70,11 @@ document, which is also among the inputs. Your document is derived from the cont
 data-model documents, and their authors correct them at the same time as you correct yours, so
 you do not see their corrected text: bring your criteria and Definition of Done into agreement
 with what each finding on the contracts or the data model directs that document to become (its
-`correction` and `doneWhen`), keeping the ids of the criteria that stay. For each finding whose
-`document` is `criteria`, either make the correction in your document, at its path, so that the
+`correction` and `doneWhen`), keeping the ids of the criteria that stay. For each constitutive
+finding (`constitutive` true) whose `document` is `criteria`, either make the correction in your document, at its path, so that the
 finding's `doneWhen` holds, or dispute it with your reason and where the reason can be checked.
-Change only what the findings and the corrected documents require. Write the output the brief
+A competitive finding (`constitutive` false) is carried as a finding of the Epic: leave it.
+Change only what the constitutive findings and the corrected documents require. Write the output the brief
 names as `schemas/spec-correction.schema.json` defines it: the findings you dispute, and a summary
 of what you changed.
 

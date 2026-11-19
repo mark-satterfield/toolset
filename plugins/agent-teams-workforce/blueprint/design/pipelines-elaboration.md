@@ -601,9 +601,16 @@ Notes on the diagram:
   kind of content the Story's entries include (`spec_authoring.story_surfaces`): contracts for an
   entry with an API, event, error or UI contract, a data model for a data store, UI design
   sources for a UI item of a frontend repository; a script writes the document of a kind the
-  Story does not need. After the one review at most three rounds follow, each round's sessions
-  running together: one correction, the decider on the disputed findings, one revision to the
-  ruling. In a correction or a revision an author works on all its documents in one session.
+  Story does not need. Each author writes to the criteria the review judges, I1 to I7 of the
+  `effective-architecture` review standard, and runs the step's scripted document checks itself
+  (`atw-spec-check`, `orchestrator/flows/spec_check.py`) before it hands its documents over; the
+  step runs the same checks on the handed-over documents, so every scripted check has passed
+  before any reviewer starts. The review runs once. Only a constitutive finding (one that breaks a
+  hard rule) is worked on; a competitive finding is recorded as a finding of the Epic and carried
+  forward. For constitutive findings at most three rounds follow, each round's sessions running
+  together: one correction, the decider on the disputed findings, one revision to the ruling; no
+  review follows them. In a correction or a revision an author works on all its documents in one
+  session.
 - A spec author decides no design, and sorts a detail the Story needs that no approved document
   states into three kinds: a name the naming standard produces (A) it builds with the naming
   command; a detail local to its repository (B) it records under `## Decided at build`, for the

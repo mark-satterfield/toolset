@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# atw-spec-check [--context <spec-<slug>.context.json>] <document>=<path> ... — runs on a spec
+# author's own documents (spec, data-model, criteria) the scripted checks the elaboration step
+# runs when the author hands them over, so the author hands over documents that already pass.
+# orchestrator/flows/spec_check.py is the command. Prints one JSON object on stdout and exits 1
+# when a document fails. The command needs typeguard, jsonschema and PyYAML
+# (scripts/requirements.txt), which the python3 on PATH does not always have, so uv supplies them.
+set -euo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec uv run --no-project --python 3.14 --with 'typeguard>=4.4' --with 'jsonschema>=4.18' --with 'pyyaml>=6' \
+  python -P "$here/../orchestrator/flows/spec_check.py" "$@"

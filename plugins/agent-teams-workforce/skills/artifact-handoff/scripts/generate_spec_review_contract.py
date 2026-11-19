@@ -171,6 +171,8 @@ def _field_type(node: Mapping[str, object], where: str, known: Mapping[str, str]
     kind: str = _text(node.get("type"), where + "/type")
     if kind == "string":
         return "str"
+    if kind == "boolean":
+        return "bool"
     if kind == "array":
         items: dict[str, object] = _node(node.get("items"), where + "/items")
         return f"list[{_field_type(items, where + '/items', known)}]"
