@@ -847,7 +847,7 @@
           "id": "source-bytes",
           "enforced": "Requirement source bytes changed since scope approval",
           "home": "skills/cumulative-regression/SKILL.md",
-          "stated": "Changed source evidence requires reassessment"
+          "stated": "A change to one of those approved sources requires reassessment"
         },
         {
           "id": "setup-exit",

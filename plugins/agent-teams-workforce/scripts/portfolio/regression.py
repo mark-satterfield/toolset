@@ -1997,6 +1997,31 @@ def _source_seal(plan: JsonObject, args: CliArgs, repo: Repository) -> tuple[Pat
     return bindings, {**source_hashes(_strs(plan, SOURCE_FILES), repo)}
 
 
+def sources_changed(bindings: Path) -> bool:
+    """Report whether a requirement source the approved scope sealed changed since the approval.
+
+    Only the sources the seal holds are compared, so a source the final mapping adds is no change.
+    Only the sources outside the repository are compared (a seal key is absolute exactly when
+    :meth:`Repository.key` placed the source outside the repository): an in-repository source is the
+    code, tests or tooling the Story's own build and the checks sync change, which the final mapping
+    and its review read as built.
+
+    Returns:
+        True when there is no seal, or a sealed source outside the repository is missing or holds other bytes.
+
+    """
+    if not bindings.is_file():
+        return True
+    sealed: JsonObject = read(bindings)
+    for key, digest in sealed.items():
+        source: Path = Path(key)
+        if not source.is_absolute():
+            continue
+        if not source.is_file() or hashlib.sha256(source.read_bytes()).hexdigest() != digest:
+            return True
+    return False
+
+
 def main() -> None:
     """Prepare, validate or verify a cumulative regression plan and report the result as JSON."""
     args: CliArgs = _parse_args()
@@ -2032,8 +2057,8 @@ def main() -> None:
     if args.approved_plan and scope(plan) != scope(read(args.approved_plan)):
         errors.append("Final mapping changed the approved impact scope")
     bindings, bound = _source_seal(plan, args, repo)
-    sources_changed: bool = args.mode == "verify" and (not bindings.is_file() or read(bindings) != bound)
-    if sources_changed:
+    changed: bool = args.mode == "verify" and sources_changed(bindings)
+    if changed:
         errors.append("Requirement source bytes changed since scope approval; reassess scope before building")
     if args.mode == "validate" and not errors:
         write(bindings, bound)
@@ -2048,7 +2073,7 @@ def main() -> None:
             "ok": not errors,
             "errors": error_values,
             "evidence": evidence,
-            "sourcesChanged": sources_changed,
+            "sourcesChanged": changed,
             **found,
             "originCorrections": corrections,
         },
@@ -2061,7 +2086,7 @@ def main() -> None:
             "ledger": args.ledger,
             "requiredKinds": required_kinds(plan),
             "reviewApproved": review_approved,
-            "sourcesChanged": sources_changed,
+            "sourcesChanged": changed,
             **found,
             "originCorrections": corrections,
         },

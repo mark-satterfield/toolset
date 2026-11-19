@@ -34,6 +34,10 @@ repositories).
   alone.
 - Discover the requirements this change affects from the actual sources, as far as the scope rule
   in `cumulative-regression` ("Establish the affected requirements") reaches and no further.
+  Start from the `otherPrdSpecs` input, which the workflow lists by script: `sameRepository` holds
+  the spec documents every other PRD wrote for this repository, `consumers` the criteria documents
+  of other repositories that name it. Read each one; carry every current requirement it states on a
+  component the Story changes, and name each one you do not cite in `discovery.evidence` with why.
 - Set each requirement's origin: task for what the Task's contract cites as what it builds, existing
   for every other current requirement the changed components carry. The gate raises a requirement
   the contract cites to task whatever you write: one whose id or sourceRef holds one of the Task's

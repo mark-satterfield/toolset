@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
@@ -87,6 +88,12 @@ SCOPE_FROM: Final = "regressionScopeFrom"
 """The Task step whose validated scope this Task reuses, recorded when it reuses one."""
 SCOPE_IDENTITY: Final = "regressionScopeIdentity"
 """The identity of the sources a scope is assessed from, which a later Task must equal to reuse it."""
+OTHER_SPECS: Final = "otherPrdSpecs"
+"""The scope assessor's input listing the spec documents of other PRDs that its discovery reads."""
+SPEC_NAME: Final = re.compile(r"^spec-(?P<repository>.+?)(?:\.data-model|\.criteria)?\.md$")
+"""A published spec document's file name, holding the repository it specifies."""
+REVISIONS_FOLDER: Final = "revisions"
+"""The folder of an Epic's earlier spec revisions, whose documents are no current requirement source."""
 SCOPE_SCHEMAS: Final = ("regression-plan.schema.json", "regression-review.schema.json")
 """The contracts a kept scope and its review were written to; a change to either is a change of identity."""
 REVIEW_PLUGIN: Final = "regressionMappedReviewPlugin"
@@ -158,7 +165,11 @@ def _scope(run: StepRun, final: bool) -> Completion:
         if final
         else "Assess cumulative regression scope from existing obligations and the full sources, for every "
         "component this Task's Story changes across all of its Tasks (bd show the Task's parent Story and its "
-        "children), so the later Tasks of the Story reuse this scope"
+        "children), so the later Tasks of the Story reuse this scope. Discovery reads every document the "
+        f"{OTHER_SPECS} input lists: the specs other PRDs wrote for this repository (sameRepository) and the "
+        "criteria of other repositories that name it (consumers). Each current requirement they state on a "
+        "component the Story changes is in scope as the scope rule says, carried as existing or superseded with "
+        "its source, and each listed document the scope does not cite is named in discovery.evidence with why"
     )
     if latest(run, REPOSITORY_SETUP_WORK) is not None:
         action += (
@@ -268,12 +279,57 @@ def _scope_initial(run: StepRun) -> Completion:
     prepared_artifacts: tuple[Artifact, ...] = (
         file_artifact("regressionPrevious", output),
         file_artifact(REQUIRED_SOURCES, required),
+        file_artifact(OTHER_SPECS, other_specs(sources, plan.parent / "other-prd-specs.json")),
         value_artifact(SCOPE_IDENTITY, identity),
     )
     reused: tuple[Artifact, ...] = _story_scope(run, identity) if run.step["script"] == ASSESS else ()
     if reused:
         return Completion(artifacts=(*prepared_artifacts, *reused))
     return Completion(artifacts=(*assessed.artifacts, *prepared_artifacts), add=assessed.add)
+
+
+def other_specs(sources: list[str], output: Path) -> Path:
+    """List the published spec documents of other PRDs that the scope's discovery reads, and write them.
+
+    The Task's own spec documents (``<root>/<Epic or PRD folder>/spec-<repository>...``, the Epic's
+    artifacts or the published specs) name its repository and the root that holds one folder per
+    Epic or PRD; every other folder's spec documents of that repository, and every other
+    repository's criteria document that names it, state current requirements the scope rule can
+    reach, so the assessor is handed them instead of finding them by search.
+
+    Args:
+        sources: The Task's governing sources, as absolute paths.
+        output: The file to write.
+
+    Returns:
+        The written file: ``{"repository", "sameRepository": [...], "consumers": [...]}``, each list empty
+        when no source is a published spec.
+
+    """
+    own: dict[Path, set[str]] = {}
+    for source in sources:
+        path: Path = Path(source)
+        named: re.Match[str] | None = SPEC_NAME.match(path.name)
+        if named is not None and REVISIONS_FOLDER not in path.parts:
+            own.setdefault(path.parent.parent, set()).add(named.group("repository"))
+    own_folders: set[Path] = {Path(source).parent for source in sources}
+    repositories: set[str] = {name for names in own.values() for name in names}
+    same: list[str] = []
+    consumers: list[str] = []
+    for root in own:
+        for document in sorted(root.glob("*/spec-*.md")):
+            named = SPEC_NAME.match(document.name)
+            if named is None or document.parent in own_folders:
+                continue
+            if named.group("repository") in repositories:
+                same.append(str(document))
+            elif document.name.endswith(".criteria.md") and any(
+                name in document.read_text(encoding="utf-8") for name in repositories
+            ):
+                consumers.append(str(document))
+    output.parent.mkdir(parents=True, exist_ok=True)
+    write_json(output, {"repository": sorted(repositories), "sameRepository": same, "consumers": consumers})
+    return output
 
 
 def _scope_identity(sources: list[str]) -> str:
@@ -714,7 +770,8 @@ def _stale_review(run: StepRun, output: Path, document: dict[str, JsonValue]) ->
 def _verify_correction(run: StepRun, output: Path, document: dict[str, JsonValue]) -> Completion:
     """Correct a failed final verification inside the step, within its allowances.
 
-    When changed source bytes, the build's own changes included, are the only error, the scope is
+    When changed bytes of a sealed requirement source outside the repository (``regression.sources_changed``)
+    are the only error, the scope is
     assessed again for them before the evidence is mapped again; that is no correction of the
     mapping, so it has its own allowance. Any other failure, a blocking mapping review or an unmapped
     required layer included and whether or not the bytes also changed, is a correction: the test
