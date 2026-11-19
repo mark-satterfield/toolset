@@ -405,23 +405,6 @@
       ]
     },
     {
-      "name": "architecture-impact-analyst",
-      "description": "Judges what an Epic's architecture change reaches. Given the entries the Epic changed and the other Epics with a Task that rests on one of them (the impact scope), it rules on each of those Epics and on the open Tasks of theirs a changed entry affects (`atw-matrix affected`): unaffected, not yet elaborated, elaborated but unbuilt, or already built, with a knock-on Task proposed for each built item. It changes no bead and writes no code or document; it writes only its result file. Use when an Epic's elaboration ends with a change to entries another Epic's architecture rests on.",
-      "skills": [
-        "agent-teams-workforce:artifact-handoff",
-        "agent-teams-workforce:subagent-contract",
-        "agent-teams-workforce:beads-contract",
-        "agent-teams-workforce:validation-protocol",
-        "agent-teams-workforce:senior-architect",
-        "agent-teams-workforce:graphrag-lookup",
-        "agent-teams-workforce:matrix"
-      ],
-      "mcpServers": [
-        "mcp-graphrag-server",
-        "gitnexus"
-      ]
-    },
-    {
       "name": "architecture-maintainer",
       "description": "Write the solutions architect's decisions into the architecture documents (arc42 and detailed/), each fact in its one home with links from every other document, and correct the effective documents to match what a Story built.",
       "skills": [

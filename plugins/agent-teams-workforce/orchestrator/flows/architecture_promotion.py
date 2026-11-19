@@ -8,10 +8,8 @@ entries up to date so that each mirrors its lifecycle (the matrix holds no folde
 the review log from the Epic's matrix entry, removes each disagreement a document maintainer of
 this run corrected the losing statement of, and sets the approved mark on the architecture the
 Epic's elaboration reviewed (its architecture review reach in the corrected matrix).
-It then commits and pushes those documents and the review log. The matrix remains local. What
-the promoted change reaches is assessed once, when the Epic's elaboration ends
-(``architecture_impact``), never after a promotion: a promotion inside a design-gap round is one
-of several of the same elaboration.
+It then commits and pushes those documents and the review log. The matrix remains local. It
+plans nothing for any other Epic: an Epic never corrects another Epic.
 Anything else is a failure with a structured cause.
 """
 

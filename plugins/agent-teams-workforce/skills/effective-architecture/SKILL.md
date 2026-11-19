@@ -89,6 +89,17 @@ first Epics most of all.
 
 Code and infrastructure iterate the same way, as the `software-engineering` skill says.
 
+### An Epic never corrects another Epic
+
+When this Epic changes an architecture entry, a contract, a stack or a shared component that
+other Epics' work rests on (`atw-matrix impact --id <id>` names it), treat that other work as
+already built and deployed, whatever its state. Every change that work needs to keep working
+against the change is this Epic's work: the solutions architect designs it, `trd-author` states
+it in the TRD, and `task-decomposer` decomposes it as Tasks of this Epic's own Stories, in the
+repositories concerned. Nothing of this Epic sets back, marks, re-elaborates or writes Tasks into
+another Epic. An Epic not yet elaborated needs nothing: it reads the architecture as it stands
+when it elaborates.
+
 ## The files the team hands on
 
 Each file an agent of the architecture team writes has one schema, in

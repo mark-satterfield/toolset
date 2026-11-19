@@ -19,6 +19,9 @@ its first step, not when it reaches the container.
 
 A flow names with ``children_together`` the containers whose child containers do not depend on
 each other (one per repository), so the runner runs those child containers at the same time.
+
+A flow names with ``removed`` the script keys and agents of steps it no longer plans at all, so a
+journal that still holds one not done drops it and resumes at the step after it.
 """
 
 from __future__ import annotations
@@ -49,6 +52,7 @@ class Registry:
         self._containers: dict[str, tuple[StepPlan, ...]] = {}
         self._fillers: dict[str, frozenset[str]] = {}
         self._together: set[str] = set()
+        self._removed: frozenset[str] = frozenset()
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def plan_under(self, container: str, *plans: StepPlan) -> None:
@@ -106,6 +110,36 @@ class Registry:
         """
         key: str | None = step.get("script") or step.get("agent")
         return key is not None and key in self._fillers.get(container, frozenset())
+
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def removed(self, *keys: str) -> None:
+        """Register the script keys and agents of steps no flow plans any more.
+
+        A journal that still holds such a step not done drops it and keeps every other step as
+        it is (``journal_run.drop_removed``).
+
+        Args:
+            keys: The script keys and agent names; added to those already registered.
+
+        Raises:
+            ValueError: No key is given, one is blank, or one has code registered.
+
+        """
+        if not keys or any(not key.strip() or key in self._scripts or key in self._agents for key in keys):
+            message: str = f"the removed keys {keys!r} are missing, blank or still have code"
+            raise ValueError(message)
+        self._removed |= frozenset(keys)
+
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def is_removed(self, step: Step) -> bool:
+        """Tell whether a step names a script key or agent registered as removed.
+
+        Returns:
+            True when its script key or agent is one ``removed`` registered.
+
+        """
+        key: str | None = step.get("script") or step.get("agent")
+        return key is not None and key in self._removed
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def children_together(self, *containers: str) -> None:
@@ -282,3 +316,4 @@ any_agent_step: Final = REGISTRY.any_agent_step
 plan_under: Final = REGISTRY.plan_under
 fills: Final = REGISTRY.fills
 children_together: Final = REGISTRY.children_together
+removed: Final = REGISTRY.removed

@@ -1,7 +1,6 @@
 """The last steps of an elaboration: scoring, the done rule, Story edges and the Epic's mark.
 
-Each is one script step of the Epic's journal, planned when the journal is created; the Story
-edges step plans the impact assessment of the Epic's architecture change before the mark. What a step
+Each is one script step of the Epic's journal, planned when the journal is created. What a step
 needs from the repositories' steps it reads from the artifacts the steps its inputs name hold.
 """
 
@@ -19,9 +18,8 @@ from typeguard import check_type
 from orchestrator.core.driver_contracts import dispatch_arguments
 from orchestrator.core.findings import record_for_run
 from orchestrator.core.io import JsonValue, json_object
-from orchestrator.core.journal_registry import script_step
+from orchestrator.core.journal_registry import removed, script_step
 from orchestrator.core.journal_steps import Completion, StepRun, value_artifact
-from orchestrator.flows.architecture_impact import follow_steps
 from orchestrator.flows.elaboration_files import (
     ARTIFACT_REPOSITORIES,
     DONE_RULE,
@@ -49,6 +47,8 @@ if TYPE_CHECKING:
     from orchestrator.core.handback_contract import Failure
 
 TASK_SCORES_STAGE: Final = "task-scores"
+
+removed("architecture-impact-analyst", "reelaborate.restart")
 
 
 def repository_rows(run: StepRun) -> list[dict[str, JsonValue]]:
@@ -152,17 +152,16 @@ def apply_done_rule(run: StepRun) -> Completion:
 
 @script_step(STORY_EDGES)
 def story_edges(run: StepRun) -> Completion:
-    """Write the dependency edges between the Epic's Stories, then plan the Epic's one impact assessment.
+    """Write the dependency edges between the Epic's Stories.
 
     The Story edges are written for every Story whose order is consistent; the Stories of this
     Epic whose order is contradictory are recorded as a ``done-rule-carried`` finding and the Epic
-    goes on. The impact analyst and the step that
-    applies its rulings follow, before the Epic is marked elaborated, when they are due
-    (``architecture_impact.follow_steps``): this is the one place an elaboration assesses what
-    its architecture change reaches.
+    goes on. Nothing is planned for any other Epic: an Epic never corrects another Epic, so every
+    change this Epic's architecture needs in work other Epics built is a Task of this Epic's own
+    Stories.
 
     Returns:
-        What the Story edge write returns, as an artifact, with the impact steps when due.
+        What the Story edge write returns, as an artifact.
 
     """
     enter_phase(run.context, run.agents.emit, FINISH_PHASE, STORY_EDGES)
@@ -195,7 +194,7 @@ def story_edges(run: StepRun) -> Completion:
             "were not written; every other Story edge was written and the Epic goes on",
             evidence=tuple(str(story) for story in refused),
         )
-    return Completion(artifacts=(value_artifact(STORY_EDGES_RESULT, written),), add=follow_steps(run))
+    return Completion(artifacts=(value_artifact(STORY_EDGES_RESULT, written),))
 
 
 @script_step(MARK_DONE)

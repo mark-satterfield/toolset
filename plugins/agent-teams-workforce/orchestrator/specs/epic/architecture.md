@@ -2,7 +2,7 @@
 
 Code: `orchestrator/flows/prd_to_spec.py` (the open-run step), `architecture.py`,
 `architecture_rounds.py`, `architecture_check.py`, `architecture_ruling.py`,
-`architecture_promotion.py`, `architecture_impact.py`, `architecture_earlier.py`,
+`architecture_promotion.py`, `architecture_earlier.py`,
 `architecture_files.py` (names, the context file and readers).
 
 One agent, `aws-solutions-architect`, is responsible for the solution: it decides the architecture
@@ -326,43 +326,15 @@ documents and the log in the vault (each that exists or that git tracks). The ma
 It writes `<arch-work>/promoted.json` and records it as the file `promoted documents`,
 with the value `vault commit` when a commit was made. A document other than
 a folder index whose matrix entry does not show it effective is recorded as an `architecture-check-carried` finding for the Epic, naming each with the reason; anything else that fails ends
-the step with a structured cause. It plans nothing after itself: a design-gap round promotes again
-within the same elaboration, so what the Epic changed is assessed once, at its end ("Impact of the
-Epic's architecture change").
+the step with a structured cause. It plans nothing after itself, and nothing for any other Epic.
 
-## Impact of the Epic's architecture change
+## No other Epic is corrected
 
-`architecture_impact.py`. The impact is assessed once per elaboration, when it ends: the Story
-edges step (`storyedges.story_edges`) plans the two steps after itself, before "Mark the Epic
-elaborated" (`architecture_impact.follow_steps`). The changed entries come only from a promotion
-this run of the Epic made: the journal's last done promotion, unless a done `reelaborate.restart`
-step already follows it (a journal planned when the promotion planned them) or an earlier end of
-elaboration recorded it as assessed (`<arch-work>/impact-assessed-<promotion step id>.json`). The
-step plans nothing when the scope is empty, and then records the promotion as assessed; the
-`reelaborate.restart` step records it when it completes.
-
-The scope (`architecture_impact.impact_scope`) is read from the tracker: for each other Epic with
-a Task whose matrix elements (or the entries it builds, `matrixtasks.TaskBead`) name an entry the
-architect's result lists under `addedOrChangedElements`, those entries. That is the work of the
-other Epic that builds the entry, adds to it or builds against it; an Epic whose requirements only
-reach a changed entry by the rule of reach (shared infrastructure, a view that describes it) is
-not in it.
-
-`architecture-impact-analyst` is handed the scope (`<arch-work>/impact-scope-<step>.json`, file
-`impact scope`) and `architecture result`, runs `atw-matrix affected` for each changed entry, and
-writes one ruling per Epic of the scope and per open Task of those Epics a changed entry affects to
-`impact-rulings.schema.json` (`elaborated-unbuilt` only when the change makes something the Epic's
-specs or Tasks state about the entry wrong) at `<arch-work>/impact-<step>.json`, recorded as the file `impact
-rulings`. The script step `reelaborate.restart` (`architecture_impact.apply_rulings`) reads the
-scope again and, for each Epic of the scope a ruling names as `epicId` with the verdict
-`elaborated-unbuilt`, records one finding of kind `architecture-impact` addressed to that Epic
-(`core/findings.py`, in `<artifacts>/<that Epic>/findings.jsonl`), naming the entries this Epic
-changed that its work rests on, with the rulings file as evidence; a ruling on an Epic outside the
-scope, or on this Epic, records nothing. No Epic is started again and no journal is set back: the
-other Epic's builds meet the changed entries through their own contract checks, which carry what
-they find. The step records the value `impact findings` (each finding) and the value `knock-on
-proposals` (each `already-built` item's proposed Task; none is created). It never fails on a
-ruling.
+An Epic's elaboration never sets back, marks, re-elaborates or writes Tasks into another Epic.
+Work other Epics planned on an entry this Epic changes is treated as built and deployed: every
+change that work needs is planned by `aws-solutions-architect`, stated in the TRD by `trd-author`
+and decomposed by `task-decomposer` as Tasks of this Epic's own Stories, in the repositories
+concerned. An Epic not yet elaborated reads the architecture as it stands when it elaborates.
 
 ## After the container
 

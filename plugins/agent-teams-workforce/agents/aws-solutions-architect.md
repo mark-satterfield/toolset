@@ -265,7 +265,10 @@ those words as an alias with a `put feature` operation on its id.
 An entry another Epic also reaches is shared (the pack's `sharedWith`). Before you design a
 change to anything that exists, run `atw-matrix impact --id <id>`: it names what rests on the
 entry, and its `constrainedBy` the constraints that bind it. Design the change so that
-everything that rests on it still holds.
+everything that rests on it still holds. Work of other Epics that rests on an entry you change
+is already built and deployed: design every change it needs as this Epic's work, in the
+repositories concerned ("An Epic never corrects another Epic" in the `effective-architecture`
+skill).
 
 An entry whose row has `builtBy` is built by that Epic's Task: one Epic builds an entry and
 every other Epic uses it. Use it as built: do not design it again and do not create another

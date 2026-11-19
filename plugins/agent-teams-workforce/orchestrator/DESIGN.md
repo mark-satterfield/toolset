@@ -1169,10 +1169,14 @@ its own architecture against the criteria; nothing else reviews it.
   the log from the Epic's entry (attribute `reviewLog`: its path in the vault and its SHA-256),
   removes each settled disagreement whose losing statement was corrected, commits and pushes the
   documents and the log in the vault, and commits and pushes the matrix. A document it cannot set
-  effective is recorded as an `architecture-check-carried` finding, naming each with the reason. It plans nothing after itself: what the
-  Epic's change reaches is assessed once, when its elaboration ends (`flows/architecture_impact.py`,
-  planned by the Story edges step), for the other Epics with a Task that rests on an entry the
-  Epic changed.
+  effective is recorded as an `architecture-check-carried` finding, naming each with the reason. It plans nothing after itself.
+- **An Epic never corrects another Epic.** No step of an Epic's elaboration sets back, marks,
+  re-elaborates or writes Tasks into another Epic. Work other Epics planned on an entry this Epic
+  changes is treated as built and deployed, and every change it needs is a Task of this Epic's own
+  Stories, in the repositories concerned (`aws-solutions-architect`, `trd-author` and
+  `task-decomposer` plan it so). An Epic not yet elaborated reads the architecture as it stands
+  when it elaborates. A journal that still holds a step of a key no flow plans any more, not done,
+  drops it and resumes at the step after it (`journal_run.drop_removed`, `Registry.removed`).
 
 ### 11.2 Repository span
 

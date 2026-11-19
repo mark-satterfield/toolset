@@ -62,7 +62,10 @@ cited by one Task that builds only this Epic's addition to it, as the spec state
 Python records the entry under the Task's `adds_to_entries` and blocks the Task, and every Task
 whose items require the item, by the `builtBy` Tasks. The one exception is an item whose entry
 the story document lists as used as built: the spec records that this Epic adds nothing to it,
-so no Task cites it, and a Story whose every item is verified or so listed gets no Task. The
+so no Task cites it, and a Story whose every item is verified or so listed gets no Task.
+Work of other Epics that rests on an entry this Epic changes is already built and deployed:
+every change it needs is a Task of this Story when it lies in this Story's repository ("An Epic
+never corrects another Epic" in the `effective-architecture` skill). The
 output check refuses Tasks that each need another of
 them built first, through the couplings and your `edges`: build those coupled things together in
 one Task. A coupling or an edge orders a build only when one Task's build consumes

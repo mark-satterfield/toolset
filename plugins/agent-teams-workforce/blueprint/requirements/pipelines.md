@@ -162,6 +162,12 @@ The owner, 2026-11-12, on several Epics each building the same alerts:
 - "This should be impossible -> 'several Epics each build the same alerts'. If one Epic builds something that another Epic needs, then the second epic should just use the first Epic's work."
 - "That' insane. Fix this."
 
+#### An Epic never corrects another Epic
+
+The owner, 2026-11-19:
+
+- "An Epic should never correct another Epic. Assume the prior Epic's tasks were already built and deployed, and any changes would need to be made in the current Epic's tasks."
+
 #### The TRD is written, then updated, during architecture
 
 The owner's statements about the TRD, in date order, quoted as given:

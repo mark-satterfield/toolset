@@ -1160,6 +1160,29 @@ def replan_step(journal: Journal, step_id: StepId, moment: str) -> Invalidation:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def remove_steps(journal: Journal, step_ids: Sequence[StepId], moment: str) -> Invalidation:
+    """Take steps out of the journal, with the steps below them, and change no other step's state.
+
+    The record of each removed step on the step that planned it (:func:`planned_for_name`) goes
+    with it, and the inputs that named a removed step lose that id.
+
+    Args:
+        journal: The journal; changed in place.
+        step_ids: The steps to remove.
+        moment: The present date-time, as :func:`timestamp` gives it.
+
+    Returns:
+        No ids reset, the ids removed, and the ids of the steps whose inputs lost a removed id.
+
+    """
+    records: set[str] = {planned_for_name(step_id) for step_id in step_ids}
+    step: Step
+    for step in _walk(journal["steps"]):
+        step["artifacts"] = [artifact for artifact in step["artifacts"] if artifact["name"] not in records]
+    return _invalidated(journal, moment, [], [], list(step_ids))
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def reset_step(journal: Journal, step_id: StepId, moment: str) -> Invalidation:
     """Set one step back to planned and keep every step its result planned, with the record of each.
 

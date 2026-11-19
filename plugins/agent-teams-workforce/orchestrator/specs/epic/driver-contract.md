@@ -32,7 +32,7 @@ first `.`), appended under an exclusive `fcntl.flock` on the file, with exactly 
 (UTC ISO-8601 with `Z`), `owner`, `from`, `source` (`plugin` or `driver`), `stage`, `kind`,
 `detail` (one line) and `evidence` (a list of strings). The kinds are `matrix-problem`,
 `architecture-check-carried`, `output-schema-carried`, `trd-carried`, `span-problem`,
-`task-decomposition-carried`, `done-rule-carried`, `ownership-race`, `architecture-impact`,
+`task-decomposition-carried`, `done-rule-carried`, `ownership-race`,
 `contract-finding`, `producer-missing`, `completion-cycle`, `prerequisite-unscheduled`,
 `regression-carried`, `prerequisite-carried`, `respec-request-converted`,
 `producer-epic-unordered`, `story-without-tasks` and `deploy-stopped`. The plugin writes them with

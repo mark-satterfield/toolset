@@ -36,7 +36,6 @@ type FindingKind = Literal[
     "task-decomposition-carried",
     "done-rule-carried",
     "ownership-race",
-    "architecture-impact",
     "contract-finding",
     "producer-missing",
     "completion-cycle",

@@ -44,7 +44,9 @@ transient cause, a defect of the pipeline) still reuses a valid output. Nothing 
 from the start while an output exists: a new session of a step whose output is on disk is handed
 it as its earlier output to correct or complete in place, and writes it fresh only when that
 correction fails (:meth:`JournalRunner._launch`). A planned step whose script key or agent was
-retired is removed and the step that planned it set back (:func:`set_back_retired`).
+retired is removed and the step that planned it set back (:func:`set_back_retired`). A step not
+done whose script key or agent no flow plans any more is dropped, whatever its state, and no other
+step changes state (:func:`drop_removed`).
 
 An agent step that has child steps is closed only through its "Finish", its last child step
 (``helper-steps.schema.json``). A "Finish" the runner ran was accepted when it ran. A "Finish"
@@ -585,6 +587,33 @@ def require_handled(journal: Journal, registry: Registry) -> None:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def drop_removed(journal: Journal, registry: Registry) -> list[StepId]:
+    """Drop each step not done whose script key or agent no flow plans any more.
+
+    A step that names a key the registry registers as removed (``Registry.removed``) and is not
+    done is taken out of the journal (``step_journal.remove_steps``), whatever its state, so the
+    run resumes at the step after it. No other step changes state: the step that planned it is
+    not set back. A done step stays as the record of what ran.
+
+    Args:
+        journal: The journal; changed in place.
+        registry: The code of the steps and the keys removed.
+
+    Returns:
+        The ids of the steps dropped, in walk order.
+
+    """
+    dropped: list[StepId] = [
+        step["id"]
+        for step in step_journal.steps_in_order(journal)
+        if step["status"] != STATUS_DONE and registry.is_removed(step)
+    ]
+    if dropped:
+        step_journal.remove_steps(journal, dropped, step_journal.timestamp())
+    return dropped
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def set_back_retired(journal: Journal, registry: Registry) -> list[StepId]:
     """Set back each step that planned a step whose script key or agent the registry no longer holds.
 
@@ -872,8 +901,9 @@ class JournalRunner:
         """Run every step that is not done, in order, until none is left.
 
         A step that fails raises what it raised, after the failure is recorded in the journal.
-        First, a planned step whose script key or agent is retired is removed and the step that
-        planned it is set back (:func:`set_back_retired`).
+        First, a step not done whose script key or agent no flow plans any more is dropped
+        (:func:`drop_removed`), and a planned step whose script key or agent is retired is removed
+        and the step that planned it is set back (:func:`set_back_retired`).
 
         Raises:
             StepError: Before any step runs, when a step that is not done names a script key or
@@ -881,6 +911,8 @@ class JournalRunner:
                 ``UnregisteredStepError`` that names every such step, whose text it carries.
 
         """
+        if drop_removed(step_journal.read_journal(self.path), self.registry):
+            step_journal.update_journal(self.path, lambda journal: drop_removed(journal, self.registry))
         if set_back_retired(step_journal.read_journal(self.path), self.registry):
             step_journal.update_journal(self.path, lambda journal: set_back_retired(journal, self.registry))
         try:
@@ -1860,14 +1892,16 @@ def open_journal(  # ruff: ignore[too-many-arguments, too-many-positional-argume
 ) -> JournalRunner:
     """Create a bead's journal when its file does not exist, and return the runner for it.
 
-    An existing journal alone says where the run begins. Of its steps, only steps that have not
-    started are changed. Child steps a filling step planned under a container, none started, that
-    differ from the plans the lane registers for the container now are removed and their filling
-    step is set back to planned, so it plans them again (:func:`replan_retired`). Then a step that
-    names a script key or agent the registry holds no code for is replanned from the lane's
-    current plan for its position (:func:`replan_unhandled`), so a journal written before a key
-    was renamed runs the step as the lane plans it now. A journal
-    that cannot be created, read or validated raises ``StepJournalError``.
+    An existing journal alone says where the run begins. A step not done whose script key or agent
+    no flow plans any more is dropped, and no other step changes state (:func:`drop_removed`).
+    Of the other steps, only steps that have not started are changed. Child steps a filling step
+    planned under a container, none started, that differ from the plans the lane registers for the
+    container now are removed and their filling step is set back to planned, so it plans them
+    again (:func:`replan_retired`). Then a step that names a script key or agent the registry holds
+    no code for is replanned from the lane's current plan for its position
+    (:func:`replan_unhandled`), so a journal written before a key was renamed runs the step as the
+    lane plans it now. A journal that cannot be created, read or validated raises
+    ``StepJournalError``.
 
     Args:
         directory: The directory that holds step journals (``step_journal.journals_directory``).
@@ -1887,6 +1921,8 @@ def open_journal(  # ruff: ignore[too-many-arguments, too-many-positional-argume
     if not path.is_file():
         step_journal.create_journal(path, step_journal.new_journal(bead, bead_type, pipeline, plans))
         return JournalRunner(path, agents, tools, registry)
+    if drop_removed(step_journal.read_journal(path), registry):
+        step_journal.update_journal(path, lambda journal: drop_removed(journal, registry))
     if replan_retired(step_journal.read_journal(path), registry):
         step_journal.update_journal(path, lambda journal: replan_retired(journal, registry))
     if replan_unhandled(step_journal.read_journal(path), plans, registry):

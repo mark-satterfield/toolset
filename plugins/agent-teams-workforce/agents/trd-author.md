@@ -82,6 +82,10 @@ never used again. `appliesTo` is
 a matrix id as the pack or `atw-matrix node` gives it, never a name, and a `source` in arc42
 gives the path and heading as the pack or its constraints file lists them.
 
+When the architect's changes reach an entry other Epics' work rests on, that work is already
+built and deployed: state the requirements its changes need as this Epic's requirements ("An
+Epic never corrects another Epic" in the `effective-architecture` skill).
+
 Each requirement is a heading of the TRD whose text is exactly its id (`#### TR-01`): the
 matrix's constraint for it points at that heading, and the step that confirms the TRD fails on
 a pointer with no heading.

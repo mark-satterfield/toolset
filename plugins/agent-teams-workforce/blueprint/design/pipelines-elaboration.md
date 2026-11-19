@@ -90,8 +90,7 @@ flowchart TD
     spec --> merge1(("merge"))
     specNo --> merge1
     merge1 --> stories["Stories and Tasks in beads, carrying the decisions or pointers to them - section 8"]
-    stories --> impact["Impact, once, as the elaboration ends: architecture-impact-analyst rules on each other Epic whose Tasks rest on an entry this Epic changed. Each of them elaborated but unbuilt, whose specs or Tasks the change makes wrong, starts again at its specs; a built item gets a proposed knock-on Task"]
-    impact --> done(["Build pipeline, which reads the TRD for its decisions"])
+    stories --> done(["Build pipeline, which reads the TRD for its decisions"])
 ```
 
 Notes on the diagram:
@@ -138,17 +137,13 @@ Notes on the diagram:
   and the review log, and records architecture approval on the individual items reviewed.
   Dependencies established ahead of time order shared work independently of approval and
   verification. Neither mark holds an Epic back; missing ordering is corrected in dependencies.
-- Once, when the Epic's elaboration ends (after its Story edges, before it is marked elaborated),
-  `architecture-impact-analyst` rules on each other Epic with a Task whose matrix elements name an
-  entry this Epic's result names as added or changed, and on the open Tasks of those Epics a
-  changed entry affects (`atw-matrix affected`); an Epic the change reaches only by the rule of
-  reach (shared infrastructure, a view) is not ruled on, and one is ruled elaborated but unbuilt
-  only when the change makes something its specs or Tasks state wrong. The step after it
-  (`orchestrator/flows/architecture_impact.py`) records one `architecture-impact` finding
-  addressed to each Epic it rules elaborated but unbuilt, naming the changed entries its work rests
-  on. No Epic is started again and no journal is set back: the pipeline never makes a run begin
-  earlier. A promotion plans no impact step, since a design-gap round promotes again within the
-  same elaboration. A built item is never reopened: its knock-on Task is recorded as proposed.
+- An Epic never corrects another Epic (the owner, 2026-11-19, `blueprint/requirements/pipelines.md`).
+  When this Epic changes an architecture entry, contract, stack or shared component that other
+  Epics' work rests on, that work is treated as built and deployed, and every change it needs is
+  planned, stated in the TRD and decomposed as Tasks of this Epic's own Stories, in the
+  repositories concerned. No step of this Epic's elaboration sets back, marks, re-elaborates or
+  writes Tasks into another Epic. An Epic not yet elaborated reads the architecture as it stands
+  when it elaborates.
 - The solutions architect is the reviewer; no other agent reviews the architecture. The owner:
   "The solutions architect is the reviewer. I do not want to introduce new reviewers in for
   architecture. I already took out reviewers." What the owner requires instead is proof: "what I
