@@ -58,7 +58,8 @@ refuses to start while another holder is live; `Keeper.run` launches `supervisor
 process with the owner's arguments, relaunches it after a backoff on a transient failure, at once
 when it asks to be restarted, and after a recorded pause when it is waiting; stops on completion,
 an intentional stop or a terminal failure; `handle_signal` forwards the owner's stop signal;
-`_sweep` sweeps the headless sessions a dead supervisor left running), `supervisor.py` (startup
+`_sweep` sweeps the headless sessions a dead supervisor left running; `_preflight_passed` runs
+the plugin's preflight before each launch), `savedstate.py` (runs the preflight), `supervisor.py` (startup
 sweeps leaked sessions and returns stranded claims to open; `run` starts the control watcher and
 one thread per lane; `--only` works one bead), `selection.py` (`select_elaboration`,
 `select_build`, `select_deploy`), `lane.py`, `dispatch.py` and `storydeploy.py` (a Story's deploy),
@@ -90,6 +91,10 @@ sequenceDiagram
         K-->>O: refuses to start - names the holder and how it was launched
     else the lease is taken
         loop until completion, an intentional stop or a terminal failure
+            K->>K: runs the plugin's preflight over the saved run files - step journals, change logs, run records
+            opt a saved run file has a defect
+                K-->>O: keeper_stopped, outcome preflight-failed - each file and defect; no supervisor launched
+            end
             K->>S: launches supervisor.py as a child process, with the owner's arguments
             S->>HS: sweeps the headless sessions a previous run left running
             S-)BD: returns stranded claims to open - unfinished work resumes at its last recorded step
@@ -148,6 +153,11 @@ Notes on the diagram:
   sessions.
 - A relaunched supervisor resumes unfinished work at its last recorded step, so a relaunch redoes
   no finished work.
+- Before every launch `keeper.py` runs the plugin's preflight (`savedstate.check`, the
+  driver-surface `PREFLIGHT_COMMAND`): a saved file an older plugin wrote that the current code
+  refuses would stop the run that reads it, so while one fails the keeper launches nothing and
+  records `keeper_stopped` with outcome `preflight-failed`, every file and defect, and a failure
+  record the dashboard shows.
 - No session and no agent runs either program, and none rehearses a run (`AGENTS.md`). A run is
   the test of the pipeline, so each run is drawn as doing real work.
 

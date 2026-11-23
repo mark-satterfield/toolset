@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# atw-preflight --runs <control repository>/.claude/workflow-runs — checks, without changing
+# anything, every saved run file the pipeline reads back (each step journal, each journal change
+# log and each Epic run record) with the current plugin's validators and journal rules.
+# orchestrator/preflight.py is the command. Prints one JSON object on stdout naming each file and
+# its defects, and exits 1 when any file has one. The keeper runs it before it launches a
+# supervisor. The command needs typeguard, jsonschema and PyYAML (scripts/requirements.txt),
+# which the python3 on PATH does not always have, so uv supplies them.
+set -euo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec uv run --no-project --python 3.14 --with 'typeguard>=4.4' --with 'jsonschema>=4.18' --with 'pyyaml>=6' \
+  python -P "$here/../orchestrator/preflight.py" "$@"

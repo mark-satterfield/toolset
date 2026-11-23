@@ -26,6 +26,17 @@ An agent reads and changes a step journal only through the command `atw-step-jou
 call the same module. A run of any pipeline begins at the first step of the bead's journal that is
 not done, and nothing else decides where it begins.
 
+A journal file and an Epic run record (`artifacts/<bead>/run.json`) each name the format they are
+written in (`formatVersion`). A reader brings a file in an older format, or with none (format 0),
+to the current one through the file's migration table (`step_journal.JOURNAL_MIGRATIONS`,
+`manifest.RUN_MIGRATIONS`) before it validates it; a change to what either file holds adds the
+next format and its migration there. The preflight command `atw-preflight --runs
+<control repository>/.claude/workflow-runs` (plugin `bin/`, `orchestrator/preflight.py`, the
+driver-surface `PREFLIGHT_COMMAND`) reads every step journal, journal change log and run record
+with the current validators and the journal rules that need the plugin's code
+(`step_journal.code_problems`), writes nothing, and exits 1 naming each file and defect; the
+keeper runs it before it launches a supervisor.
+
 ## The build and deploy steps
 
 A Task's journal lists the steps of the build pipeline and a Story's the steps of the deploy

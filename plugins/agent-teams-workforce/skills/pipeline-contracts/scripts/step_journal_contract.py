@@ -66,6 +66,7 @@ PLANNED_FOR_PREFIX: Final = "for "
 CHANGE_PREFIX: Final = "STEP-JOURNAL "
 CHANGE_PART_PREFIX: Final = "STEP-JOURNAL-PART "
 CHANGE_CHUNK: Final = 4000
+FORMAT_VERSION: Final = 1
 SCHEMA_PATH: Final[Path] = Path(__file__).resolve().parent.parent / "schemas" / "step-journal.schema.json"
 
 
@@ -137,6 +138,7 @@ class JournalChange(TypedDict):
 class Journal(TypedDict):
     """Typed form of # in step-journal.schema.json."""
 
+    formatVersion: int
     bead: BeadId
     beadType: BeadType
     pipeline: Pipeline

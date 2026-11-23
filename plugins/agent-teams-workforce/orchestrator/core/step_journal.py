@@ -9,8 +9,10 @@ later step takes an earlier step's outputs from the artifacts recorded here
 The journal's shape, its vocabularies and the step plans are defined once, in
 ``skills/pipeline-contracts/schemas/step-journal.schema.json``; every type, value and schema
 check used here comes from ``step_journal_contract``, the module generated from that schema.
-This module adds the behaviour, and the three rules a JSON Schema cannot state
-(:func:`consistency_problems`).
+This module adds the behaviour, the four rules a JSON Schema cannot state
+(:func:`consistency_problems`), the rules that need the current plugin's knowledge of its steps
+(:class:`StepCode`), and the migration table that brings a file written in an older format to the
+current one on read (:data:`JOURNAL_MIGRATIONS`).
 
 This module is the only reader and writer of a step journal file: every change is one
 read-modify-write under an exclusive lock (:func:`update_journal`), written to a temporary file
@@ -39,7 +41,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Final, TypedDict, TypeIs
+from typing import Final, Protocol, TypedDict, TypeIs
 
 from typeguard import CollectionCheckStrategy, typechecked
 
@@ -50,7 +52,9 @@ from step_journal_contract import (
     BEAD_TYPES,
     CHANGE_PART_PREFIX,
     CHANGE_PREFIX,
+    FORMAT_VERSION,
     JOURNAL_SUFFIX,
+    KIND_VALUE,
     LOCK_SUFFIX,
     PIPELINES,
     PLANNED_FOR_PREFIX,
@@ -99,6 +103,60 @@ EXIT_OK: Final = 0
 EXIT_REFUSED: Final = 1
 AGENT_PREFIX: Final = "agent-teams-workforce:"
 """The prefix under which Claude Code registers this plugin's agents; a journal step names none."""
+FORMAT_KEY: Final = "formatVersion"
+"""The key of a journal file that names the format it is written in; a file without it is format 0."""
+
+
+def _state_format(journal: dict[str, object]) -> dict[str, object]:
+    """Bring a format 0 journal to format 1: the file names its format.
+
+    Returns:
+        The journal with ``formatVersion`` 1.
+
+    """
+    return {**journal, FORMAT_KEY: 1}
+
+
+type JournalMigration = Callable[[dict[str, object]], dict[str, object]]
+
+JOURNAL_MIGRATIONS: Final[dict[int, JournalMigration]] = {0: _state_format}
+"""For each older format, the change that brings a decoded journal of it to the next format."""
+
+
+class StepCode(Protocol):
+    """What the current plugin knows of the steps a journal's pipeline runs.
+
+    The rules :func:`consistency_problems` checks with it need the plugin's flows, which this
+    module does not import; the preflight command hands it in.
+    """
+
+    def known(self, step: Step) -> bool:
+        """Tell whether the plugin runs the step's script key or agent, or drops it as removed.
+
+        Returns:
+            True when the step's key or agent has code, or is registered as removed.
+
+        """
+        ...
+
+    def required_params(self, step: Step) -> tuple[str, ...] | None:
+        """Name the parameters the step's code needs from the step that planned it.
+
+        Returns:
+            The parameter names, empty when only the record itself is needed; None when the
+            step's code reads no parameters it cannot do without.
+
+        """
+        ...
+
+    def plans_child_containers(self, container: str) -> bool:
+        """Tell whether every child container of a container is planned by another step's result.
+
+        Returns:
+            True for a container whose child containers a step's result always plans and records.
+
+        """
+        ...
 
 
 class InputArtifacts(TypedDict):
@@ -402,40 +460,197 @@ def _performs(step: Step) -> bool:
     return "agent" in step or "script" in step
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def consistency_problems(journal: Journal) -> list[str]:
-    """Check the three rules of the step journal that its JSON Schema cannot state.
-
-    Args:
-        journal: A journal that satisfies the schema.
+def _repeated_ids(steps: Sequence[Step]) -> list[str]:
+    """Name every step id that appears more than once.
 
     Returns:
-        One sentence per repeated step id, per input that names no step of the journal, and per
-        done step that has a child step that is not done; empty when the journal is consistent.
+        One sentence per repeated occurrence.
 
     """
-    problems: list[str] = []
     seen: set[StepId] = set()
+    problems: list[str] = []
     step: Step
-    for step in _walk(journal["steps"]):
+    for step in steps:
         if step["id"] in seen:
             problems.append(f"step id {step['id']} appears more than once")
         seen.add(step["id"])
-    for step in _walk(journal["steps"]):
-        problems.extend(
-            f"step {step['id']} names the input {named}, which is not a step of this journal"
-            for named in step.get("inputs", [])
-            if named not in seen
-        )
-        unfinished: list[StepId] = [child["id"] for child in step["steps"] if child["status"] != STATUS_DONE]
-        if step["status"] == STATUS_DONE and unfinished:
-            problems.append(f"step {step['id']} is done but its child steps {', '.join(unfinished)} are not")
     return problems
+
+
+def _structure_problems(step: Step, known: set[StepId]) -> list[str]:
+    """Check one step against the rules of the journal's structure.
+
+    Returns:
+        One sentence per input that names no step of the journal, one when the step is done over a
+        child step that is not done, and one when a planned step with an agent or a script holds
+        child steps: those come from a run of it, and a planned step has no run.
+
+    """
+    problems: list[str] = [
+        f"step {step['id']} names the input {named}, which is not a step of this journal"
+        for named in step.get("inputs", [])
+        if named not in known
+    ]
+    unfinished: list[StepId] = [child["id"] for child in step["steps"] if child["status"] != STATUS_DONE]
+    if step["status"] == STATUS_DONE and unfinished:
+        problems.append(f"step {step['id']} is done but its child steps {', '.join(unfinished)} are not")
+    if step["status"] == STATUS_PLANNED and step["steps"] and _performs(step):
+        problems.append(
+            f"step {step['id']} ({step['description']}) has an agent or a script and is planned, yet holds the "
+            f"child steps {', '.join(child['id'] for child in step['steps'])}; they came from a run of it that is gone",
+        )
+    return problems
+
+
+def _unknown_code(step: Step, code: StepCode) -> list[str]:
+    """Name a step not done whose script key or agent the current plugin has no code for.
+
+    Returns:
+        One sentence, or none.
+
+    """
+    if step["status"] == STATUS_DONE or not _performs(step) or code.known(step):
+        return []
+    named: str = step.get("script") or step.get("agent") or ""
+    return [
+        (
+            f"step {step['id']} ({step['description']}) is {step['status']} and names {named!r}, "
+            "which the current plugin registers no code for"
+        ),
+    ]
+
+
+def _orphaned_containers(steps: Sequence[Step], code: StepCode) -> list[str]:
+    """Name each child container, not done, of a planned-children container that no step records planning.
+
+    Returns:
+        One sentence per such container: the step that planned it is no longer in the journal.
+
+    """
+    planned: set[StepId] = {named for step in steps for named in planned_by(step)}
+    return [
+        f"step {child['id']} ({child['description']}) under {parent['description']!r} is {child['status']}, "
+        "but no step of the journal records planning it: the step that planned it is gone"
+        for parent in steps
+        if not _performs(parent) and code.plans_child_containers(parent["description"])
+        for child in parent["steps"]
+        if not _performs(child) and child["status"] != STATUS_DONE and child["id"] not in planned
+    ]
+
+
+def _record_value(artifact: Artifact, record: str) -> list[JsonValue]:
+    """Read the value of an artifact when it is the value artifact of this name.
+
+    Returns:
+        The value as the one item, or nothing.
+
+    """
+    if artifact["kind"] != KIND_VALUE or artifact["name"] != record:
+        return []
+    return [artifact["value"]]
+
+
+def _handed_params(step: Step, by_id: dict[StepId, Step]) -> list[JsonValue]:
+    """Read the parameter records for a step among the artifacts its inputs hand it.
+
+    Returns:
+        The value of every ``for <step id>`` value artifact held by an input step or a step below it.
+
+    """
+    record: str = planned_for_name(step["id"])
+    return [
+        value
+        for named in step.get("inputs", [])
+        if named in by_id
+        for below in _walk([by_id[named]])
+        for artifact in below["artifacts"]
+        for value in _record_value(artifact, record)
+    ]
+
+
+def _missing_params(step: Step, by_id: dict[StepId, Step], code: StepCode) -> list[str]:
+    """Name a step not done whose code needs parameters its inputs do not hand it.
+
+    Returns:
+        One sentence, or none.
+
+    """
+    required: tuple[str, ...] | None = code.required_params(step)
+    if step["status"] == STATUS_DONE or required is None:
+        return []
+    handed: list[JsonValue] = _handed_params(step, by_id)
+    held: JsonValue = handed[-1] if handed else None
+    if not isinstance(held, dict):
+        return [
+            (
+                f"step {step['id']} ({step['description']}) is {step['status']} and its code reads the parameters "
+                f"the step that planned it handed it, but no input hands it the record {planned_for_name(step['id'])!r}"
+            ),
+        ]
+    absent: list[str] = [name for name in required if name not in held]
+    if not absent:
+        return []
+    return [
+        (
+            f"step {step['id']} ({step['description']}) is {step['status']} and its parameters lack "
+            f"{', '.join(absent)}, which its code needs"
+        ),
+    ]
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def code_problems(journal: Journal, code: StepCode) -> list[str]:
+    """Check the rules of a journal that need the current plugin's knowledge of its steps.
+
+    Args:
+        journal: A journal that satisfies the schema.
+        code: What the current plugin knows of the steps of the journal's pipeline.
+
+    Returns:
+        One sentence per step not done whose script key or agent has no code, per child container
+        not done whose planner is gone, and per step not done whose code needs parameters no input
+        hands it; empty when the journal is consistent with the plugin.
+
+    """
+    steps: list[Step] = list(_walk(journal["steps"]))
+    by_id: dict[StepId, Step] = {step["id"]: step for step in steps}
+    return [
+        *(problem for step in steps for problem in _unknown_code(step, code)),
+        *_orphaned_containers(steps, code),
+        *(problem for step in steps for problem in _missing_params(step, by_id, code)),
+    ]
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def consistency_problems(journal: Journal, code: StepCode | None = None) -> list[str]:
+    """Check the four rules of the step journal that its JSON Schema cannot state.
+
+    Every step id is unique; every input names a step of the journal; a done step has no child
+    step that is not done; and a planned step with an agent or a script holds no child step. With
+    ``code`` the rules of :func:`code_problems` are checked too.
+
+    Args:
+        journal: A journal that satisfies the schema.
+        code: What the current plugin knows of the journal's steps; None checks the four rules only.
+
+    Returns:
+        One sentence per problem found; empty when the journal is consistent.
+
+    """
+    steps: list[Step] = list(_walk(journal["steps"]))
+    known: set[StepId] = {step["id"] for step in steps}
+    problems: list[str] = [
+        *_repeated_ids(steps),
+        *(problem for step in steps for problem in _structure_problems(step, known)),
+    ]
+    if code is None:
+        return problems
+    return [*problems, *code_problems(journal, code)]
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def checked_journal(journal: Journal, where: str = "step journal") -> Journal:
-    """Require a journal to satisfy the schema and the three rules the schema cannot state.
+    """Require a journal to satisfy the schema and the four rules the schema cannot state.
 
     Args:
         journal: The journal.
@@ -445,7 +660,7 @@ def checked_journal(journal: Journal, where: str = "step journal") -> Journal:
         The journal.
 
     Raises:
-        StepJournalError: The journal breaks one of the three rules. A journal that does not
+        StepJournalError: The journal breaks one of the four rules. A journal that does not
             satisfy the schema raises it from ``validate_journal``.
 
     """
@@ -601,6 +816,7 @@ def new_journal(bead: BeadId, bead_type: BeadType, pipeline: Pipeline, plans: Se
     """
     checked: list[StepPlan] = validate_step_plans(list(plans), "the outermost steps")
     journal: Journal = {
+        "formatVersion": FORMAT_VERSION,
         "bead": bead,
         "beadType": bead_type,
         "pipeline": pipeline,
@@ -1517,6 +1733,49 @@ def parent_step(journal: Journal, step_id: StepId) -> Step | None:
     return None
 
 
+def _format_of(decoded: dict[str, object], where: str) -> int:
+    """Read the format a decoded journal names.
+
+    Returns:
+        Its ``formatVersion``; 0 when it names none.
+
+    Raises:
+        StepJournalError: The format is not a whole number from 0 to :data:`FORMAT_VERSION`.
+
+    """
+    held: object = decoded.get(FORMAT_KEY, 0)
+    if isinstance(held, bool) or not isinstance(held, int) or not 0 <= held <= FORMAT_VERSION:
+        message: str = (
+            f"{where} names the format {held!r}; this plugin reads formats 0 to {FORMAT_VERSION}, "
+            "so a newer plugin wrote it"
+        )
+        raise StepJournalError(message)
+    return held
+
+
+def migrated_journal(decoded: object, where: str) -> object:
+    """Bring a decoded journal written in an older format to the current one.
+
+    Each migration of :data:`JOURNAL_MIGRATIONS` from the journal's format up to
+    :data:`FORMAT_VERSION` is applied in turn; the result is validated by the caller.
+
+    Args:
+        decoded: The decoded file.
+        where: What to call the journal in an error.
+
+    Returns:
+        The journal in the current format; a value that is not an object, unchanged.
+
+    """
+    if not isinstance(decoded, dict):
+        return decoded
+    journal: dict[str, object] = {str(key): value for key, value in decoded.items()}
+    held: int
+    for held in range(_format_of(journal, where), FORMAT_VERSION):
+        journal = JOURNAL_MIGRATIONS[held](journal)
+    return journal
+
+
 def _read_text(path: Path) -> str:
     """Read a journal file.
 
@@ -1568,8 +1827,9 @@ def read_snapshot(path: Path) -> JournalSnapshot:
 
     A read takes no lock: a write replaces the file in one move, so a reader sees the journal
     before the change or after it. Every read decodes a fresh journal from the file; bytes that
-    passed the schema and the three rules the schema cannot state earlier in this process are not
-    checked again. A file that does not satisfy them raises ``StepJournalError``.
+    passed the schema and the four rules the schema cannot state earlier in this process are not
+    checked again. A file written in an older format is brought to the current one first
+    (:func:`migrated_journal`). A file that does not satisfy them raises ``StepJournalError``.
 
     Args:
         path: The journal file.
@@ -1590,7 +1850,7 @@ def read_snapshot(path: Path) -> JournalSnapshot:
     content: bytes = _read_bytes(path)
     revision: str = revision_of(content)
     try:
-        decoded: object = json.loads(content.decode("utf-8"))
+        decoded: object = migrated_journal(json.loads(content.decode("utf-8")), str(path))
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         message = f"the step journal {path} is not JSON: {error}"
         raise StepJournalError(message) from error
@@ -1617,15 +1877,18 @@ def read_journal(path: Path) -> Journal:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def file_problems(path: Path) -> list[str]:
-    """Describe every way a journal file fails the contract.
+def file_problems(path: Path, code: StepCode | None = None) -> list[str]:
+    """Describe every way a journal file fails the contract, after bringing it to the current format.
 
     Args:
         path: The journal file.
+        code: What the current plugin knows of the journal's steps; None checks the rules a
+            journal alone states.
 
     Returns:
-        The schema's problems when the file does not satisfy it, otherwise the problems
-        :func:`consistency_problems` finds; empty when the file conforms.
+        The format's problem when no migration reaches the current format, the schema's problems
+        when the file does not satisfy it, otherwise the problems :func:`consistency_problems`
+        finds; empty when the file conforms.
 
     Raises:
         StepJournalError: The file is missing, unreadable or not JSON.
@@ -1637,9 +1900,13 @@ def file_problems(path: Path) -> list[str]:
     except json.JSONDecodeError as error:
         message: str = f"the step journal {path} is not JSON: {error}"
         raise StepJournalError(message) from error
-    if not is_journal(decoded):
-        return schema_problems(decoded)
-    return consistency_problems(decoded)
+    try:
+        current: object = migrated_journal(decoded, str(path))
+    except StepJournalError as error:
+        return [str(error)]
+    if not is_journal(current):
+        return schema_problems(current)
+    return consistency_problems(current, code)
 
 
 def _write_journal(path: Path, journal: Journal) -> None:

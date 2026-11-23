@@ -490,10 +490,10 @@ that fails validation is saved beside the handback as `.invalid.json` and replac
 contract's `rejected` document.
 
 `detailPath` is the run record `<work>/run.json`, whose shape is `orchestrator/core/manifest.py`
-`RunManifest`; each of its sessions is a `handback_contract.Session`. A session row of an existing
-record that holds a key the contract retired (`manifest.RETIRED_SESSION_KEYS`) is read without it,
-and the record is written back in the current shape; any other key the contract does not define
-fails the read. It also carries the flow's
+`RunManifest`; each of its sessions is a `handback_contract.Session`. The record names its
+format (`formatVersion`); a record in an older format, or with none (format 0), is brought to the
+current one on read by the migration table `manifest.RUN_MIGRATIONS` and written back in the
+current shape; any key the current contract does not define fails the read. It also carries the flow's
 report and the note and verdict events of the dispatch. For a failure that escapes the flow
 (section 6.7) `detailPath` is the traceback file beside the handback.
 

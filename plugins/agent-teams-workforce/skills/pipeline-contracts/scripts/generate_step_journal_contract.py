@@ -72,7 +72,7 @@ SUFFIXES: Final[tuple[tuple[str, str], ...]] = (
 # The Python type of every schema type that needs no further reading: an object typed here declares no properties.
 PLAIN_TYPES: Final[dict[str, str]] = {"string": "str", "integer": "int", "object": "dict[str, JsonValue]"}
 # (constant name, schema key) for every whole number the contract fixes.
-NUMBERS: Final[tuple[tuple[str, str], ...]] = (("CHANGE_CHUNK", "x-changeChunk"),)
+NUMBERS: Final[tuple[tuple[str, str], ...]] = (("CHANGE_CHUNK", "x-changeChunk"), ("FORMAT_VERSION", "x-formatVersion"))
 # Every definitions entry the generated readers validate against by name.
 VALIDATED: Final[tuple[str, ...]] = ("artifact", "stepPlan", "stepPlans", "journalChange")
 _CAMEL: Final[re.Pattern[str]] = re.compile(r"(?<=[a-z0-9])([A-Z])")

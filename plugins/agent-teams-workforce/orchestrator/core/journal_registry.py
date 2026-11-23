@@ -22,6 +22,10 @@ each other (one per repository), so the runner runs those child containers at th
 
 A flow names with ``removed`` the script keys and agents of steps it no longer plans at all, so a
 journal that still holds one not done drops it and resumes at the step after it.
+
+A flow names with ``needs_params`` the script keys whose code cannot run without the parameters
+the step that planned it handed it (``StepRun.params``), so the preflight finds a step whose record
+is gone before a run reaches it.
 """
 
 from __future__ import annotations
@@ -53,6 +57,7 @@ class Registry:
         self._fillers: dict[str, frozenset[str]] = {}
         self._together: set[str] = set()
         self._removed: frozenset[str] = frozenset()
+        self._params: frozenset[str] = frozenset()
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def plan_under(self, container: str, *plans: StepPlan) -> None:
@@ -140,6 +145,33 @@ class Registry:
         """
         key: str | None = step.get("script") or step.get("agent")
         return key is not None and key in self._removed
+
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def needs_params(self, *keys: str) -> None:
+        """Register the script keys whose code cannot run without its planner's parameters.
+
+        Args:
+            keys: The script keys; added to those already registered.
+
+        Raises:
+            ValueError: No key is given, or one is blank.
+
+        """
+        if not keys or any(not key.strip() for key in keys):
+            message: str = f"the script keys {keys!r} that need parameters are missing or blank"
+            raise ValueError(message)
+        self._params |= frozenset(keys)
+
+    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+    def requires_params(self, step: Step) -> bool:
+        """Tell whether a step's script key is one ``needs_params`` registered.
+
+        Returns:
+            True when the step's code cannot run without its planner's parameters.
+
+        """
+        key: str | None = step.get("script")
+        return key is not None and key in self._params
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def children_together(self, *containers: str) -> None:
@@ -317,3 +349,4 @@ plan_under: Final = REGISTRY.plan_under
 fills: Final = REGISTRY.fills
 children_together: Final = REGISTRY.children_together
 removed: Final = REGISTRY.removed
+needs_params: Final = REGISTRY.needs_params

@@ -69,7 +69,7 @@ from orchestrator.core.driver_contracts import DispatchArguments, dispatch_argum
 from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.journal_changes import create_child_journal
-from orchestrator.core.journal_registry import agent_step, script_step
+from orchestrator.core.journal_registry import agent_step, needs_params, script_step
 from orchestrator.core.journal_steps import (
     UNDER_CONTAINER,
     AgentLaunch,
@@ -1090,6 +1090,9 @@ def _write_pack(
         },
         SPEC_PACK_SCHEMA,
     )
+
+
+needs_params(SPEC_CONTEXT, SPEC_NOT_APPLICABLE)
 
 
 @script_step(SPEC_CONTEXT)

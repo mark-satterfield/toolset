@@ -44,7 +44,7 @@ from orchestrator.core.driver_contracts import dispatch_arguments
 from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.journal_changes import create_child_journal
-from orchestrator.core.journal_registry import agent_step, script_step
+from orchestrator.core.journal_registry import agent_step, needs_params, script_step
 from orchestrator.core.journal_steps import (
     AgentLaunch,
     Completion,
@@ -231,6 +231,9 @@ def _write_context(run: StepRun, held: Repository, existing: list[JsonValue]) ->
         },
         TASK_CONTEXT_SCHEMA,
     )
+
+
+needs_params(TASK_CONTEXT, TASK_WRITE)
 
 
 @script_step(TASK_CONTEXT)
