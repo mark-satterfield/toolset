@@ -5,7 +5,9 @@ the findings its own specialists own (implementation, tests and documentation) w
 allowance.
 A finding owned by the contract or the tooling, and a finding still open when its correction
 allowance is spent, is carried: recorded on the deciding step as the ``carriedFindings`` value
-artifact and reported in the build handback, and the build continues.
+artifact and reported in the build handback, and the build continues. A failing deterministic check
+(the repository's lint task, an infrastructure Task's CDK synth) is not a review finding and is never
+carried: ``build_checks`` routes it to its owner's correction or holds the Task.
 """
 
 from __future__ import annotations

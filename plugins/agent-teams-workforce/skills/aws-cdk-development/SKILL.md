@@ -117,7 +117,7 @@ Pin the runtime to the latest Python runtime Lambda supports (check with the AWS
 
 ### Target environment
 
-Every `cdk` command a deploy runs (`synth`, `deploy`, `diff`, `destroy` and any other) names the
+Every `cdk` command a build or a deploy runs (`synth`, `deploy`, `diff`, `destroy` and any other) names the
 environment it targets as CDK context, `--context env="$ATW_DEPLOY_ENV"`, and never relies on the
 app's own fallback. `ATW_DEPLOY_ENV` is the variable the pipeline-contracts skill defines; when it is
 unset, run no `cdk` command and report that it is unset.

@@ -35,6 +35,7 @@ from orchestrator.core.tool_locks import control_repo, seconds
 from orchestrator.core.tools import Tools
 from orchestrator.flows import (
     build_carried,
+    build_checks,
     build_follow,
     build_gate,
     build_hooks,
@@ -94,6 +95,9 @@ REVIEW_DOCUMENTS: Final = "reviewDocumentationCorrection"
 """The code review whose documentation-owned findings were handed to the documentation writers."""
 EMPTY_SELECTION: Final = "emptySelectionReselected"
 """The failing suite an empty implementer selection left uncorrected, handed to the implementation lead."""
+SUITE_JUDGMENT: Final = (
+    "Judge whether the failing suite needs test repair, product correction, upstream readiness or environment recovery"
+)
 
 
 def _suite(run: StepRun, name: str, *, fresh: bool = False) -> dict[str, JsonValue]:
@@ -133,6 +137,52 @@ def _suite_artifacts(name: str, suite: dict[str, JsonValue], stage: str) -> tupl
     return (value_artifact(name, suite), build_policy.suite_decision(suite, stage))
 
 
+def _verified(
+    run: StepRun,
+    suite: dict[str, JsonValue],
+    stage: str,
+) -> tuple[dict[str, JsonValue], build_checks.Checks | None]:
+    """Run the deterministic checks on a passing suite's tree; a failing check stands in for the suite.
+
+    Returns:
+        The suite, or the failing check's suite-shaped result in its place, and the checks that ran
+        (None when the suite itself fails and no check ran).
+
+    """
+    if suite.get("exitCode") != 0:
+        return suite, None
+    checks: build_checks.Checks = build_checks.run_checks(run, stage)
+    return (suite if checks.failure is None else checks.failure), checks
+
+
+def _checked(checks: build_checks.Checks | None) -> tuple[ValueArtifact, ...]:
+    """Record the deterministic checks that passed, when they ran.
+
+    Returns:
+        The checks record, or nothing.
+
+    """
+    return checks.artifacts() if checks is not None else ()
+
+
+def _judgment_instruction(suite: dict[str, JsonValue]) -> str:
+    """Ask the suite judge about a failing suite, or about the failing deterministic check standing in for it.
+
+    Returns:
+        The judgment request.
+
+    """
+    check: JsonValue = suite.get("check")
+    if not isinstance(check, str):
+        return SUITE_JUDGMENT
+    return (
+        f"The whole suite passes, but the repository's deterministic {check} check `{suite['command']}` exited "
+        f"{suite['exitCode']} (evidence {suite['evidence']}); a failing deterministic check is never a pass and "
+        "never a carried tooling finding. Judge whether it needs test repair, product correction (for a CDK synth "
+        "or cdk-nag failure, the infrastructure code), upstream readiness or environment recovery"
+    )
+
+
 def _workspace_step(run: StepRun) -> Completion:
     """Establish and independently verify the existing Story workspace.
 
@@ -143,15 +193,10 @@ def _workspace_step(run: StepRun) -> Completion:
     bead: dict[str, JsonValue] = _object(run, "bead")
     story: dict[str, JsonValue] = json_object(bead["story"])
     workspace: Workspace = provision(run.tools, Path(check_type(bead["repoPath"], str)), check_type(story["id"], str))
-    vocabulary: dict[str, JsonValue] = json_object(run.context.args["infraVocabulary"])
-    labels: list[str] = check_type(bead.get("labels", []), list[str])
-    types: list[str] = check_type(vocabulary["types"], list[str])
-    infrastructure_labels: list[str] = check_type(vocabulary["labels"], list[str])
-    infrastructure: bool = bead.get("type") in types or bool(set(labels) & set(infrastructure_labels))
     additions: list[NewStep] = []
     if bead.get("cdsDesignSource") in {"bundle", "cds"}:
         additions.append(_new("build:design-source", "Carry the Task's recorded UI design source"))
-    if infrastructure:
+    if build_checks.infrastructure(run):
         additions.append(_new("build:infra-intent", "Author concrete infrastructure intent"))
     return Completion(
         artifacts=(
@@ -957,8 +1002,7 @@ def _judged(run: StepRun, suite: dict[str, JsonValue], outcome: str, again: tupl
         run,
         "acceptance-criteria-coverage-assessor",
         OutputContract(CONTRACTS / "build-suite-review.schema.json", "suiteReview"),
-        "Judge whether the failing suite needs test repair, product correction, "
-        "upstream readiness or environment recovery",
+        _judgment_instruction(suite),
         followups=(
             _new(
                 "build:green-reviewed",
@@ -1050,7 +1094,7 @@ def _implement(run: StepRun) -> Completion:
 
 
 def _green_check(run: StepRun) -> Completion:
-    """Use actual suite exits and bounded correction work, not an agent's success assertion.
+    """Use actual suite and deterministic check exits and bounded correction work, not an agent's success assertion.
 
     Returns:
         Accepted suite evidence, another selected implementation round, or the test author's
@@ -1061,8 +1105,14 @@ def _green_check(run: StepRun) -> Completion:
     previous: JsonValue = latest(run, "testPrint")
     if isinstance(previous, dict) and previous.get("files") != fingerprint["files"]:
         return _rule_changed_tests(run, previous, fingerprint)
-    suite: dict[str, JsonValue] = _suite(run, "green")
-    artifacts = (*_suite_artifacts("greenRun", suite, "green-check"), value_artifact("testPrint", fingerprint))
+    executed: dict[str, JsonValue] = _suite(run, "green")
+    suite, checks = _verified(run, executed, "green-check")
+    artifacts = (
+        value_artifact("greenRun", suite),
+        build_policy.suite_decision(executed, "green-check"),
+        value_artifact("testPrint", fingerprint),
+        *_checked(checks),
+    )
     if suite["exitCode"] == 0:
         return Completion(artifacts=artifacts)
     _require_progress(run, suite)
@@ -1070,8 +1120,7 @@ def _green_check(run: StepRun) -> Completion:
         run,
         "acceptance-criteria-coverage-assessor",
         OutputContract(CONTRACTS / "build-suite-review.schema.json", "suiteReview"),
-        "Judge whether the failing suite needs test repair, product correction, "
-        "upstream readiness or environment recovery",
+        _judgment_instruction(suite),
         followups=(
             _new(
                 "build:green-reviewed",
@@ -1187,8 +1236,31 @@ def _green_reviewed(run: StepRun) -> Completion:
     if _count(run, "build:green-check", "greenRun") >= build_rounds():
         stage: str = "build:green-reviewed"
         raise StepError(stage, OTHER_CAUSE, (check_type(review["evidence"], str),))
+    failed: dict[str, JsonValue] = _latest_suite(run)
+    if route == "implementation" and isinstance(failed.get("check"), str):
+        return _check_selection(run, failed)
     key: str = "build:plan-tests" if route == "test-repair" else "build:plan-code"
     return Completion(add=(StepGroup((_new(key, "Correct the judged suite failure"),)),))
+
+
+def _check_selection(run: StepRun, failed: dict[str, JsonValue]) -> Completion:
+    """Have the implementation lead select the specialists that own a failing deterministic check.
+
+    Returns:
+        The lead's selection and the planning of the selected code work.
+
+    """
+    return reasoned(
+        run,
+        "implementation-lead",
+        OutputContract(CONTRACTS / "build-selection.schema.json", "implementationSelection"),
+        f"The whole suite passes but the deterministic {failed['check']} check `{failed['command']}` fails "
+        f"(evidence {failed['evidence']}). Select the implementation specialists that own its correction, in "
+        "build order: for a CDK synth or cdk-nag failure the CDK implementer (cdk-stack-author, or the CDK "
+        "specialist of the failing construct); for a lint, format or type finding the specialist of the code it "
+        "names. It is never a carried tooling finding",
+        followups=(_new("build:plan-code", "Correct the failing deterministic check"),),
+    )
 
 
 def _prerequisites_ready(run: StepRun) -> Completion:
@@ -1345,8 +1417,13 @@ def _refactor_check(run: StepRun) -> Completion:
     if latest(run, "refactorSnapshot") is None or latest(run, "refactorWork") is None:
         recorded = (_refactoring(run).artifact(),)
     else:
-        suite: dict[str, JsonValue] = _suite(run, "refactor")
-        recorded = _suite_artifacts("refactorRun", suite, "refactor-check")
+        executed: dict[str, JsonValue] = _suite(run, "refactor")
+        suite, checks = _verified(run, executed, "refactor-check")
+        recorded = (
+            value_artifact("refactorRun", suite),
+            build_policy.suite_decision(executed, "refactor-check"),
+            *_checked(checks),
+        )
         if suite["exitCode"] != 0:
             additions = (
                 StepGroup((_new("build:refactor-restore", "Restore the Green snapshot after regressing refactor"),)),
@@ -1376,7 +1453,7 @@ def _restore(run: StepRun) -> Completion:
         "build:refactor-restore",
         ["restore", "--tree", str(_workspace(run).tree), "--to", snapshot],
     )
-    suite: dict[str, JsonValue] = _suite(run, "restored")
+    suite, checks = _verified(run, _suite(run, "restored"), "refactor-restore")
     if suite["exitCode"] != 0:
         judged: Completion = _judged(run, suite, "restoreFailure", ())
         return Completion(artifacts=(value_artifact("refactorRestore", restored), *judged.artifacts), add=judged.add)
@@ -1384,6 +1461,7 @@ def _restore(run: StepRun) -> Completion:
         artifacts=(
             value_artifact("refactorRestore", restored),
             *_suite_artifacts("greenRun", suite, "refactor-restore"),
+            *_checked(checks),
         ),
     )
 
@@ -1413,7 +1491,7 @@ def _final_review_covers(run: StepRun) -> bool:
 
 
 def _final_suite(run: StepRun) -> Completion:
-    """Require the complete repository suite to pass before the Task can commit.
+    """Require the complete repository suite and its deterministic checks to pass before the Task can commit.
 
     The final review is left out when the final suite passes and the other deterministic checks
     that stand in for it pass too (``build_gate``); a failing final suite goes to its judgment.
@@ -1442,7 +1520,7 @@ def _final_suite(run: StepRun) -> Completion:
                 _new("build:final-suite-checked", "Run the final suite after independent code review"),
             ),
         )
-    suite: dict[str, JsonValue] = _suite(run, "final")
+    suite, checks = _verified(run, _suite(run, "final"), "final-suite")
     if suite["exitCode"] != 0:
         return _judged(
             run,
@@ -1451,7 +1529,7 @@ def _final_suite(run: StepRun) -> Completion:
             (_new("build:final-suite", "Run the suite a final time after the correction"),),
         )
     build_policy.record_story_suite(run, suite)
-    return Completion(artifacts=_suite_artifacts("finalRun", suite, "final-suite"))
+    return Completion(artifacts=(*_suite_artifacts("finalRun", suite, "final-suite"), *_checked(checks)))
 
 
 def _final_suite_unreviewed(run: StepRun) -> Completion | None:
@@ -1463,7 +1541,7 @@ def _final_suite_unreviewed(run: StepRun) -> Completion | None:
         decide, so the final review runs.
 
     """
-    suite: dict[str, JsonValue] = _suite(run, "final")
+    suite, checks = _verified(run, _suite(run, "final"), "final-suite")
     if suite["exitCode"] != 0:
         return _judged(
             run,
@@ -1471,7 +1549,7 @@ def _final_suite_unreviewed(run: StepRun) -> Completion | None:
             "finalFailure",
             (_new("build:final-suite", "Run the suite a final time after the correction"),),
         )
-    reason: str | None = build_gate.passed(run, suite, "final-review")
+    reason: str | None = build_gate.passed(run, suite, "final-review", checks)
     if reason is None:
         return None
     build_policy.record_story_suite(run, suite)
@@ -1479,6 +1557,7 @@ def _final_suite_unreviewed(run: StepRun) -> Completion | None:
         artifacts=(
             *_suite_artifacts("finalRun", suite, "final-suite"),
             build_policy.Decision("final-review", "omit", reason).artifact(),
+            *_checked(checks),
         ),
     )
 

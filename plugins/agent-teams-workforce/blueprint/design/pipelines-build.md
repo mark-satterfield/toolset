@@ -131,8 +131,23 @@ documentation audit with an applicability reason; the code review, the final rev
 suite and the regression gate always run. The code review and the final review start
 `code-correctness-reviewer` only when a deterministic check fails or cannot decide
 (`orchestrator/flows/build_gate.py`): the whole suite exits 0 on the current tree, the Task's
-tests were written in this build, and the repository's `task lint` exits 0. The final suite runs
-before the final review for that reason, and a failing final suite goes to its judgment. The
+tests were written in this build, and the deterministic checks exit 0. The final suite runs
+before the final review for that reason, and a failing final suite goes to its judgment.
+
+The deterministic checks (`orchestrator/flows/build_checks.py`) run on every passing suite of the
+green check, the refactor check, the refactor restoration and the final suite: the repository's
+`task lint` (lint, format, type checks and cdk-nag), and for an infrastructure Task a real
+`cdk synth --context env=$ATW_DEPLOY_ENV --quiet --output <scratch>` of every CDK app the
+repository declares (`.code-checks/checks.json` `cdk_apps`, else `cdk.json`). With
+`ATW_DEPLOY_ENV` unset an infrastructure Task's synth check fails with that cause; the build never
+guesses an environment. A failing check stands in for the suite as the failing result: it goes to
+the suite judge and, routed to implementation, to the implementation lead, which selects the
+specialist that owns it (the CDK implementer for a synth or cdk-nag failure), then the suite and
+the checks run again, within the build correction allowance. When the allowance is spent the Task
+is held and not committed, as for a failing suite. A failing deterministic check is never carried
+as a tooling or contract review finding; only findings whose correction lies outside the build
+are carried. Checks that passed on a content tree are recorded and reused while the tree, the
+environment and the infrastructure classification are unchanged. The
 acceptance criteria's tests are proved by the regression verification, a script, before the
 commit; `acceptance-criteria-coverage-assessor` judges only a failing suite. The test writers
 review the tests of the components the Task changes (the policy's `affectedComponents`), not the

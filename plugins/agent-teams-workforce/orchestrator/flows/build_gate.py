@@ -4,28 +4,23 @@ A Task's code review (``build:select-implementers``) and its final review (``bui
 start ``code-correctness-reviewer`` only when a deterministic check fails or cannot decide. The
 checks pass together when the whole suite exits 0 on the current content tree, the Task's test
 writers wrote tests in this build (the Task's acceptance criteria have tests; the regression
-verification maps each one to tests the suite collects before the commit), and the repository's
-declared lint task (``task lint``, which runs its lint, format and type checks) exits 0 on the
-same tree. A repository that declares no lint task cannot be decided, so the reviewer runs.
+verification maps each one to tests the suite collects before the commit), and the deterministic
+checks (``build_checks``: the repository's declared lint task, and an infrastructure Task's CDK
+synth) exit 0 on the same tree. A repository that declares no lint task cannot be decided, so the
+reviewer runs.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final
 
-from orchestrator.flows import build_policy
+from orchestrator.flows import build_checks, build_policy
 from orchestrator.flows.build_sessions import accepted_steps
-from orchestrator.flows.build_state import workspace_of
-from orchestrator.flows.build_suite import declared_task, run_suite
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from orchestrator.core.io import JsonValue
     from orchestrator.core.journal_steps import StepRun
 
-LINT_TASK: Final = "lint"
-"""The repository task that runs its lint, format and type checks (polyrepo ``checks-sync`` writes it)."""
 TEST_FILES: Final = "testFiles"
 """The artifact in which a test writer names the test files it wrote."""
 
@@ -44,13 +39,19 @@ def _tests_written(run: StepRun) -> bool:
     )
 
 
-def passed(run: StepRun, suite: dict[str, JsonValue], stage: str) -> str | None:
+def passed(
+    run: StepRun,
+    suite: dict[str, JsonValue],
+    stage: str,
+    checks: build_checks.Checks | None = None,
+) -> str | None:
     """Run the deterministic checks that stand in for a review, and say why they all pass.
 
     Args:
         run: The step that would start the reviewer.
         suite: The latest whole-suite result, with its evidence key.
-        stage: The stage the reviewer would run, for the lint evidence's file name.
+        stage: The stage the reviewer would run, for the checks' evidence file names.
+        checks: The deterministic checks this step already ran on the current tree, if any.
 
     Returns:
         The reason the review is not needed, or None when a check fails or cannot decide.
@@ -62,14 +63,11 @@ def passed(run: StepRun, suite: dict[str, JsonValue], stage: str) -> str | None:
         return None
     if not _tests_written(run):
         return None
-    worktree: Path = workspace_of(run).tree
-    command: str | None = declared_task(worktree, LINT_TASK)
-    if command is None:
+    verified: build_checks.Checks = checks if checks is not None else build_checks.run_checks(run, stage)
+    if verified.failure is not None or not verified.lint_declared:
         return None
-    evidence: Path = run.context.work / "build" / str(run.step["id"]) / f"{stage}-lint.json"
-    if run_suite(run.tools, worktree, command, evidence, run.step["script"]).exit_code != 0:
-        return None
+    commands: str = ", ".join(f"`{command}`" for command in verified.commands)
     return (
         f"every deterministic check passed on tree {tree}: the whole suite exited 0, the Task's tests were "
-        f"written in this build, and `{command}` exited 0 (evidence {evidence})"
+        f"written in this build, and {commands} exited 0"
     )
