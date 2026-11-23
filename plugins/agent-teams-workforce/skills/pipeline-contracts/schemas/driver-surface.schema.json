@@ -185,12 +185,6 @@
       "const": "orchestrator/wall_probe.py",
       "x-python": {"constant": "WALL_PROBE_COMMAND", "type": "str"}
     },
-    "PreflightCommand": {
-      "description": "Path of the preflight command, relative to the plugin root with '/' between its parts. The keeper runs it with its own Python interpreter and the argument --runs <control repository>/.claude/workflow-runs before it launches a supervisor: the command reads every saved run file the pipeline reads back with the current plugin's validators, writes nothing, prints one JSON object naming each file and its defects, and exits 1 when any file has one. The keeper launches no supervisor while it exits other than 0.",
-      "type": "string",
-      "const": "orchestrator/preflight.py",
-      "x-python": {"constant": "PREFLIGHT_COMMAND", "type": "str"}
-    },
     "WallProbeTimeout": {
       "description": "Seconds the account-wall probe's prompt may take before the probe reports unavailable.",
       "type": "number",

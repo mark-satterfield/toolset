@@ -31,8 +31,7 @@ written in (`formatVersion`). A reader brings a file in an older format, or with
 to the current one through the file's migration table (`step_journal.JOURNAL_MIGRATIONS`,
 `manifest.RUN_MIGRATIONS`) before it validates it; a change to what either file holds adds the
 next format and its migration there. The preflight command `atw-preflight --runs
-<control repository>/.claude/workflow-runs` (plugin `bin/`, `orchestrator/preflight.py`, the
-driver-surface `PREFLIGHT_COMMAND`) reads every step journal, journal change log and run record
+<control repository>/.claude/workflow-runs` (plugin `bin/`, `orchestrator/preflight.py`) reads every step journal, journal change log and run record
 with the current validators and the journal rules that need the plugin's code
 (`step_journal.code_problems`), writes nothing, and exits 1 naming each file and defect; the
 keeper runs it before it launches a supervisor.

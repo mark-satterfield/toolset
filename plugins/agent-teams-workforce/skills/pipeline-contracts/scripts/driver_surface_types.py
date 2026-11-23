@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 #: SHA-256 of the schema text this module was generated from.
-SCHEMA_SHA256: Final[str] = "370a463b8347c5fe0b9127a23b0aeff45450bf886e743751c79e0b4bb0217809"
+SCHEMA_SHA256: Final[str] = "c8df56ec24f21aafdf81bf352431db9bf7e341a687a0cb7d93029c57c81c0762"
 #: The schema this module was generated from.
 SCHEMA_PATH: Final[Path] = Path(__file__).resolve().parent.parent / "schemas" / "driver-surface.schema.json"
 
@@ -137,13 +137,6 @@ RATE_LIMIT_INFO_KEY: Final[str] = "rate_limit_info"
 #: stands: the command runs one tool-less haiku prompt, saves what the prompt printed to that file, and
 #: prints one WallProbeResult as JSON.
 WALL_PROBE_COMMAND: Final[str] = "orchestrator/wall_probe.py"
-#: Path of the preflight command, relative to the plugin root with '/' between its parts. The keeper
-#: runs it with its own Python interpreter and the argument --runs <control
-#: repository>/.claude/workflow-runs before it launches a supervisor: the command reads every saved run
-#: file the pipeline reads back with the current plugin's validators, writes nothing, prints one JSON
-#: object naming each file and its defects, and exits 1 when any file has one. The keeper launches no
-#: supervisor while it exits other than 0.
-PREFLIGHT_COMMAND: Final[str] = "orchestrator/preflight.py"
 #: Seconds the account-wall probe's prompt may take before the probe reports unavailable.
 WALL_PROBE_TIMEOUT: Final[float] = 120.0
 #: The scratch env keys, in order.

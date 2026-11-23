@@ -153,8 +153,8 @@ Notes on the diagram:
   sessions.
 - A relaunched supervisor resumes unfinished work at its last recorded step, so a relaunch redoes
   no finished work.
-- Before every launch `keeper.py` runs the plugin's preflight (`savedstate.check`, the
-  driver-surface `PREFLIGHT_COMMAND`): a saved file an older plugin wrote that the current code
+- Before every launch `keeper.py` runs the plugin's preflight (`savedstate.check` runs the
+  installed plugin's `orchestrator/preflight.py`): a saved file an older plugin wrote that the current code
   refuses would stop the run that reads it, so while one fails the keeper launches nothing and
   records `keeper_stopped` with outcome `preflight-failed`, every file and defect, and a failure
   record the dashboard shows.
