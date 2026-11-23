@@ -149,13 +149,10 @@ Every plugin version bump in this repo runs `/version` (the `version-plugins` sk
 
 This project uses an agentic framework names "Agent Teams Workforce" to...
 
-These instructions will be loaded into the contect window at session start.
-@/Users/msat1971/.codex/plugins/cache/mark-satterfield/agent-teams-workforce/6.24.0/AGENT-INSTRUCTIONS.md`
-
 | Question about this:                                         | Find it here:                                                |
 | ------------------------------------------------------------ | ------------------------------------------------------------ |
-| SDLC pipelines, workflow scripts, agent taxonomy, teams, full roster. | [/Users/msat1971/.codex/plugins/cache/mark-satterfield/agent-teams-workforce/6.24.0/AGENT-TEAMS-WORKFORCE.md](/Users/msat1971/.codex/plugins/cache/mark-satterfield/agent-teams-workforce/6.24.0/AGENT-TEAMS-WORKFORCE.md) |
-| Useful commands                                              | [/Users/msat1971/.codex/plugins/cache/mark-satterfield/agent-teams-workforce/6.24.0/commands](/Users/msat1971/.codex/plugins/cache/mark-satterfield/agent-teams-workforce/6.24.0/commands) |
+| SDLC pipelines, workflow scripts, agent taxonomy, teams, full roster. | [plugins/agent-teams-workforce/AGENT-TEAMS-WORKFORCE.md](plugins/agent-teams-workforce/AGENT-TEAMS-WORKFORCE.md) |
+| Useful commands                                              | [plugins/agent-teams-workforce/commands](plugins/agent-teams-workforce/commands) |
 <!-- END AGENT TEAMS WORKFORCE -->
 
 <!-- gitnexus:start -->
