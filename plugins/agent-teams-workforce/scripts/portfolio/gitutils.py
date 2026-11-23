@@ -925,6 +925,29 @@ def reuse_worktree(repo: str, branch: str, path: str, home: Path, blocked: list[
     return reused_tree
 
 
+def share_hooks(repo: str, tree: str) -> None:
+    """Make commits in a linked worktree run the primary tree's commit hooks.
+
+    A relative `core.hooksPath` (for example `.beads/hooks`) is taken from the root of the tree a
+    commit runs in, and an ignored hook folder does not exist in a linked worktree, so git would run
+    no hook there. The worktree's own configuration then names the primary tree's hook folder by
+    its absolute path; the primary tree's configuration is left as it is.
+
+    Args:
+        repo: The primary tree.
+        tree: The linked worktree.
+
+    A git failure here raises the GitError that `git` raises.
+
+    """
+    hooks_argv: tuple[str, ...] = ("rev-parse", "--path-format=absolute", "--git-path", "hooks")
+    primary_hooks: str = git(repo, *hooks_argv).stdout.strip()
+    if git(tree, *hooks_argv).stdout.strip() == primary_hooks:
+        return
+    git(repo, "config", "extensions.worktreeConfig", "true")
+    git(tree, "config", "--worktree", "core.hooksPath", primary_hooks)
+
+
 def cmd_provision(args: argparse.Namespace) -> ProvisionResult:
     """Run the `provision` command.
 
@@ -947,6 +970,7 @@ def cmd_provision(args: argparse.Namespace) -> ProvisionResult:
         checkout_from_origin(repo, branch, path, blocked)
     elif not reused_tree:
         cut_worktree(repo, branch, path, default, blocked)
+    share_hooks(repo, tree)
     facts: TreeFacts = tree_facts(tree)
     on: str = facts.get("branch") or ""
     ok: bool = bool(facts.get("isGitTree")) and on not in {"", "HEAD", default}
