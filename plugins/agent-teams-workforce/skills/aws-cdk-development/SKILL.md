@@ -119,14 +119,16 @@ Pin the runtime to the latest Python runtime Lambda supports (check with the AWS
 
 Every `cdk` command a build or a deploy runs (`synth`, `deploy`, `diff`, `destroy` and any other) names the
 environment it targets as CDK context, `--context env="$ATW_DEPLOY_ENV"`, and never relies on the
-app's own fallback. `ATW_DEPLOY_ENV` is the variable the pipeline-contracts skill defines; when it is
-unset, run no `cdk` command and report that it is unset.
+app's own fallback. The environment's name is also the AWS profile the command uses, so the same
+command names `--profile "$ATW_DEPLOY_ENV"` and never relies on an inherited `AWS_PROFILE`.
+`ATW_DEPLOY_ENV` is the variable the pipeline-contracts skill defines; when it is unset, run no `cdk`
+command and report that it is unset.
 
 Before deploying:
 
 1. **Synth**: Ensure the app synthesizes
    ```bash
-   cdk synth --profile dev --context env="$ATW_DEPLOY_ENV"
+   cdk synth --profile "$ATW_DEPLOY_ENV" --context env="$ATW_DEPLOY_ENV"
    ```
 
 2. **Tests**: Run the repository's synth assertion tests (the test command the repository declares, for example `pytest`)

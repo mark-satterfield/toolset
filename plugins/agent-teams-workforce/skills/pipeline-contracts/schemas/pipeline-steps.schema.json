@@ -86,7 +86,12 @@
           "$ref": "#/definitions/kindKey"
         },
         "params": {
-          "description": "The names of the parameters the step that adds a step of this kind hands it.",
+          "description": "The names of the parameters the step that adds a step of this kind always hands it; its code needs every one.",
+          "type": "array",
+          "items": {"$ref": "#/definitions/text"}
+        },
+        "optionalParams": {
+          "description": "The names of the parameters the step that adds a step of this kind hands it only in some cases; its code does without them.",
           "type": "array",
           "items": {"$ref": "#/definitions/text"}
         },

@@ -41,7 +41,9 @@ keeper runs it before it launches a supervisor.
 A Task's journal lists the steps of the build pipeline and a Story's the steps of the deploy
 pipeline. Each such step carries its kind (for example `build:green-check`) as its `script` text.
 `pipeline-steps.json` defines every kind: its description and purpose, what runs it (the driver or
-a workflow script), the artifacts it records and reads, the steps its result adds, the rule by
+a workflow script), the parameters the step that adds it always hands it (`params`, which the
+preflight requires) and those it hands only in some cases (`optionalParams`), the artifacts it
+records and reads, the steps its result adds, the rule by
 which it declines to add another correction, and what it waits for. `plan` lists the kinds planned
 up front; `inner` lists the child steps a workflow script plans under a step it performs.
 
@@ -100,7 +102,8 @@ session the environment `$defs.DriverEnvironment` lists. What an agent uses:
 - `ATW_EXECUTION_ID` — the driver execution id, always set for an orchestrator dispatch.
 - `ATW_ORCH_IDLE` — the orchestrator idle limit in seconds, a positive finite number; default 3600.
 - `ATW_DEPLOY_ENV` — the environment every infrastructure command of a build or a deploy targets
-  (the build's CDK synth check and the cdk-nag checker included), set by the driver from its own configuration and defaulted nowhere. How a command passes it is in the
+  (the build's CDK synth check and the cdk-nag checker included), and the AWS profile every `cdk` command
+  names, set by the driver from its own configuration and defaulted nowhere. How a command passes it is in the
   `aws-cdk-development` skill ("Target environment").
 
 The plugin orchestrator reads the driver modules named in `x-driver` (headlessenv, fablewall,

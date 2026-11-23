@@ -137,8 +137,9 @@ before the final review for that reason, and a failing final suite goes to its j
 The deterministic checks (`orchestrator/flows/build_checks.py`) run on every passing suite of the
 green check, the refactor check, the refactor restoration and the final suite: the repository's
 `task lint` (lint, format, type checks and cdk-nag), and for an infrastructure Task a real
-`cdk synth --context env=$ATW_DEPLOY_ENV --quiet --output <scratch>` of every CDK app the
-repository declares (`.code-checks/checks.json` `cdk_apps`, else `cdk.json`). With
+`cdk synth --profile $ATW_DEPLOY_ENV --context env=$ATW_DEPLOY_ENV --quiet --output <scratch>` of
+every CDK app the repository declares (the environment's name is also the AWS profile, so the
+check never depends on an inherited `AWS_PROFILE`) (`.code-checks/checks.json` `cdk_apps`, else `cdk.json`). With
 `ATW_DEPLOY_ENV` unset an infrastructure Task's synth check fails with that cause; the build never
 guesses an environment. A failing check stands in for the suite as the failing result: it goes to
 the suite judge and, routed to implementation, to the implementation lead, which selects the

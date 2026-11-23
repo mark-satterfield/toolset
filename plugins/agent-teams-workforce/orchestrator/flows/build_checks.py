@@ -3,7 +3,9 @@
 After the whole suite passes (``build:green-check``, ``build:refactor-check``,
 ``build:refactor-restore`` and the final suite), the build runs the repository's declared lint task
 (``task lint``: its lint, format and type checks, cdk-nag included) and, for an infrastructure
-Task, a real ``cdk synth --context env=$ATW_DEPLOY_ENV`` of every CDK app the repository declares.
+Task, a real ``cdk synth --profile $ATW_DEPLOY_ENV --context env=$ATW_DEPLOY_ENV`` of every CDK app
+the repository declares: the environment's name is also the AWS profile the CDK CLI resolves the
+app's account and region from.
 A non-zero exit stands in for the suite as the failing result, so it goes through the failing-suite
 correction loop to the specialist that owns it, and when that loop's rounds are spent the Task is
 held, never committed. A failing check is never carried as a review finding. With
@@ -131,10 +133,12 @@ def synth_command(environment: str, output: Path) -> str:
     """Build the synth check's command for one app.
 
     Returns:
-        ``cdk synth --context env=<environment> --quiet --output <output>``, quoted for the shell.
+        ``cdk synth --profile <environment> --context env=<environment> --quiet --output <output>``,
+        quoted for the shell.
 
     """
-    return f"cdk synth --context env={shlex.quote(environment)} --quiet --output {shlex.quote(str(output))}"
+    named: str = shlex.quote(environment)
+    return f"cdk synth --profile {named} --context env={named} --quiet --output {shlex.quote(str(output))}"
 
 
 def _planned(run: StepRun, stage: str, *, infra: bool, environment: str) -> list[Check]:
@@ -155,7 +159,7 @@ def _planned(run: StepRun, stage: str, *, infra: bool, environment: str) -> list
     if apps and not environment:
         detail: str = (
             f"{DEPLOY_ENV_ENV} is unset, so the CDK synth check cannot name the environment it targets "
-            f"(cdk synth --context env=<name>); the build never guesses one"
+            f"(cdk synth --profile <name> --context env=<name>); the build never guesses one"
         )
         raise StepError(str(run.step["script"]), OTHER_CAUSE, (detail,))
     scratch: Path = run.context.work / "build" / str(run.step["id"]) / f"{stage}-cdk-out"

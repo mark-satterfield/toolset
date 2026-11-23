@@ -49,7 +49,7 @@
         "build:plan-code": {"description": "Plan the selected implementers", "purpose": "Develop missing behavior and warranted improvements", "runBy": "task-to-deploy", "reads": ["implementationSelection", "implementers"], "records": [{"name": "implementers", "kind": "value", "holds": "The accepted implementers evidence"}, {"name": "emptySelectionReselected", "kind": "value", "holds": "The failing suite an empty selection left uncorrected, handed to the implementation lead"}, {"name": "implementationSelection", "kind": "file", "holds": "The implementation lead's accepted selection"}], "adds": [{"kinds": ["build:implement", "build:green-check"], "when": "one step per selected implementer, followed by the whole-suite check"}, {"kinds": ["build:implementation-recheck"], "when": "an empty selection was made before an observable repository change and that digest was not reassessed"}, {"kinds": ["build:plan-code"], "when": "the suite fails after an empty selection, below this dispatch's correction bound: the implementation lead selects again"}]},
         "build:green-reviewed": {"description": "Route the post-implementation suite judgment", "purpose": "Correct the artifact responsible for the failure", "runBy": "task-to-deploy", "reads": ["suiteReview", "greenRun"], "records": [{"name": "implementationSelection", "kind": "file", "holds": "The implementation lead's accepted selection of the specialists that own a failing deterministic check"}], "adds": [{"kinds": ["build:plan-tests"], "when": "the judgment identifies test repair"}, {"kinds": ["build:plan-code"], "when": "the judgment identifies product implementation; for a failing deterministic check (lint or CDK synth), after the implementation lead selects the specialists that own it, the CDK implementer for a synth or cdk-nag failure"}, {"kinds": ["build:prerequisites-diagnosed"], "when": "a bounded current-Task environment diagnosis is accepted"}, {"kinds": ["build:plan-code"], "when": "this dispatch's diagnoses are spent: the failing suite goes to the implementers, recorded as a prerequisite-carried finding"}]},
         "build:audit-reviewed": {"description": "Resolve the independent audit findings", "purpose": "Correct implementation, test and documentation findings in scope within the correction allowance; carry the rest and never stop on a finding. Every finding of review=reuseReview is a note: divergence from the matrix's guess is corrected in the matrix by build:matrix-follow, so that review adds nothing", "runBy": "task-to-deploy", "reads": [], "records": [{"name": "carriedFindings", "kind": "value", "holds": "The review findings carried instead of corrected: those owned by the contract or the tooling, and those still open when their correction allowance is spent, each with its review, owner, severity, detail and reason"}], "adds": [{"kinds": ["build:correct-findings", "build:cds-audit"], "when": "findings require correction and again names build:cds-audit; a clean review adds nothing"}], "params": ["review", "again"]},
-        "build:docs-specialist": {"description": "Update stale documentation with {agent}", "purpose": "Keep the changed contracts documented by the selected specialist; with review, resolve that review's findings owned by documentation", "runBy": "task-to-deploy", "params": ["agent", "review"], "reads": ["worktree", "documentationSelection"], "records": [{"name": "documentationWork", "kind": "file", "holds": "The accepted documentation work report under build-implementation.schema.json"}], "adds": []},
+        "build:docs-specialist": {"description": "Update stale documentation with {agent}", "purpose": "Keep the changed contracts documented by the selected specialist; with review, resolve that review's findings owned by documentation", "runBy": "task-to-deploy", "params": ["agent"], "optionalParams": ["review"], "reads": ["worktree", "documentationSelection"], "records": [{"name": "documentationWork", "kind": "file", "holds": "The accepted documentation work report under build-implementation.schema.json"}], "adds": []},
         "build:workspace": {
           "description": "Establish the Story's worktree and branch",
           "purpose": "Every step that reads or changes the Task's code works in one tree on the Story's branch",
@@ -294,7 +294,7 @@
             {"name": "greenRun", "kind": "value", "holds": "The factual suite result: command, exitCode, tail, failing, summary and evidence; on a passing suite whose deterministic check fails, that check's result in the same shape with its check (lint or cdk-synth) and tree"},
             {"name": "testPrint", "kind": "value", "holds": "The accepted testPrint evidence"},
             {"name": "suiteReview", "kind": "file", "holds": "The accepted suiteReview evidence"},
-            {"name": "deterministicChecks", "kind": "value", "holds": "The deterministic checks that passed on the suite's content tree (task lint, and an infrastructure Task's cdk synth --context env=$ATW_DEPLOY_ENV of each CDK app), with the identity (tree, environment, infrastructure) a later step reuses them for"},
+            {"name": "deterministicChecks", "kind": "value", "holds": "The deterministic checks that passed on the suite's content tree (task lint, and an infrastructure Task's cdk synth --profile $ATW_DEPLOY_ENV --context env=$ATW_DEPLOY_ENV of each CDK app), with the identity (tree, environment, infrastructure) a later step reuses them for"},
             {"name": "stageDecision", "kind": "value", "holds": "The stage decision: stage, action (run, omit or reuse), reason, and the policy step or the step whose evidence was reused"}
           ],
           "adds": [
@@ -369,7 +369,7 @@
           "reads": ["worktree", "suiteCommand", "refactorSnapshot", "design", "refactorWork", "codeReview", "codeReviewTree", "executionPolicy"],
           "records": [
             {"name": "refactorRun", "kind": "value", "holds": "The factual suite result: command, exitCode, tail, failing, summary and evidence; on a passing suite whose deterministic check fails, that check's result in the same shape"},
-            {"name": "deterministicChecks", "kind": "value", "holds": "The deterministic checks that passed on the suite's content tree (task lint, and an infrastructure Task's cdk synth --context env=$ATW_DEPLOY_ENV of each CDK app), with the identity (tree, environment, infrastructure) a later step reuses them for"},
+            {"name": "deterministicChecks", "kind": "value", "holds": "The deterministic checks that passed on the suite's content tree (task lint, and an infrastructure Task's cdk synth --profile $ATW_DEPLOY_ENV --context env=$ATW_DEPLOY_ENV of each CDK app), with the identity (tree, environment, infrastructure) a later step reuses them for"},
             {"name": "stageDecision", "kind": "value", "holds": "The stage decision: stage, action (run, omit or reuse), reason, and the policy step or the step whose evidence was reused"}
           ],
           "adds": [
@@ -387,7 +387,7 @@
             {"name": "refactorRestore", "kind": "value", "holds": "The accepted refactorRestore evidence"},
             {"name": "greenRun", "kind": "value", "holds": "The factual suite result: command, exitCode, tail, failing, summary and evidence"},
             {"name": "restoreFailure", "kind": "value", "holds": "The failing restored suite, or its failing deterministic check, handed to its judge"},
-            {"name": "deterministicChecks", "kind": "value", "holds": "The deterministic checks that passed on the suite's content tree (task lint, and an infrastructure Task's cdk synth --context env=$ATW_DEPLOY_ENV of each CDK app), with the identity (tree, environment, infrastructure) a later step reuses them for"},
+            {"name": "deterministicChecks", "kind": "value", "holds": "The deterministic checks that passed on the suite's content tree (task lint, and an infrastructure Task's cdk synth --profile $ATW_DEPLOY_ENV --context env=$ATW_DEPLOY_ENV of each CDK app), with the identity (tree, environment, infrastructure) a later step reuses them for"},
             {"name": "suiteReview", "kind": "file", "holds": "The accepted suiteReview evidence"},
             {"name": "stageDecision", "kind": "value", "holds": "The stage decision: stage, action (run, omit or reuse), reason, and the policy step or the step whose evidence was reused"}
           ],
@@ -425,7 +425,7 @@
           "description": "Plan the selected documentation specialists",
           "purpose": "Only selected specialists update documentation made stale by this Task, or correct the documentation findings of the review named by review",
           "runBy": "task-to-deploy",
-          "params": ["review"],
+          "optionalParams": ["review"],
           "reads": ["documentationSelection"],
           "records": [],
           "adds": [
@@ -442,7 +442,7 @@
             {"name": "finalRun", "kind": "value", "holds": "The factual suite result: command, exitCode, tail, failing, summary and evidence"},
             {"name": "greenRun", "kind": "value", "holds": "The failing final suite, handed to its judge"},
             {"name": "finalFailure", "kind": "value", "holds": "The failing final suite, or its failing deterministic check, handed to its judge"},
-            {"name": "deterministicChecks", "kind": "value", "holds": "The deterministic checks that passed on the suite's content tree (task lint, and an infrastructure Task's cdk synth --context env=$ATW_DEPLOY_ENV of each CDK app), with the identity (tree, environment, infrastructure) a later step reuses them for"},
+            {"name": "deterministicChecks", "kind": "value", "holds": "The deterministic checks that passed on the suite's content tree (task lint, and an infrastructure Task's cdk synth --profile $ATW_DEPLOY_ENV --context env=$ATW_DEPLOY_ENV of each CDK app), with the identity (tree, environment, infrastructure) a later step reuses them for"},
             {"name": "suiteReview", "kind": "file", "holds": "The accepted suiteReview evidence"},
             {"name": "stageDecision", "kind": "value", "holds": "The stage decision: stage, action (run, omit or reuse), reason, and the policy step or the step whose evidence was reused"}
           ],

@@ -84,6 +84,7 @@ class StepKind:
     run_by: str
     within: str | None
     params: tuple[str, ...]
+    optional_params: tuple[str, ...]
     reads: tuple[str, ...]
     records: tuple[Recorded, ...]
     adds: tuple[Addition, ...]
@@ -180,6 +181,7 @@ def _kind(key: str, raw: JsonValue) -> StepKind:
         run_by=_text(entry.get("runBy"), f"{where} runBy"),
         within=_optional_text(entry.get("within"), f"{where} within"),
         params=_texts(entry.get("params"), f"{where} params"),
+        optional_params=_texts(entry.get("optionalParams"), f"{where} optionalParams"),
         reads=_texts(entry.get("reads"), f"{where} reads"),
         records=tuple(
             Recorded(
