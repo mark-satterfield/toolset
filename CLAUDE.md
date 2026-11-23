@@ -143,16 +143,19 @@ No build step and no npm scripts — plugins are plain Markdown/YAML. They are d
 
 Every plugin version bump in this repo runs `/version` (the `version-plugins` skill). It bumps `.claude-plugin/marketplace.json` and each bumped plugin's `plugins/<name>/.claude-plugin/plugin.json` together and commits them in one commit — the marketplace resolves plugins by version, and a version that moves in only one of those two files ships nothing. Pass `--push` to land it.
 
-<!-- BEGIN AGENT TEAMS WORKFORCE: v:6.24.0 hash:5d6bd54 -->
-
+<!-- BEGIN AGENT TEAMS WORKFORCE: written by `polyrepo agents-sync` from agents-file.md in the agent-teams-workforce plugin; edit it there -->
 ## Instructions for Agent Teams Workforce
 
-This project uses an agentic framework names "Agent Teams Workforce" to...
+This project uses Agent Teams Workforce (the `agent-teams-workforce` plugin): bounded
+specialist agents that run the SDLC through workflow scripts, with maker, checker and approver
+kept separate.
 
-| Question about this:                                         | Find it here:                                                |
-| ------------------------------------------------------------ | ------------------------------------------------------------ |
-| SDLC pipelines, workflow scripts, agent taxonomy, teams, full roster. | [plugins/agent-teams-workforce/AGENT-TEAMS-WORKFORCE.md](plugins/agent-teams-workforce/AGENT-TEAMS-WORKFORCE.md) |
-| Useful commands                                              | [plugins/agent-teams-workforce/commands](plugins/agent-teams-workforce/commands) |
+- **SDLC pipelines, workflow scripts, agent taxonomy, teams, full roster:**
+  `AGENT-TEAMS-WORKFORCE.md` at the root of the installed plugin. The installed plugin root is
+  the `installPath` of `agent-teams-workforce@mark-satterfield` in
+  `$CLAUDE_CONFIG_DIR/plugins/installed_plugins.json` (`$CLAUDE_CONFIG_DIR` defaults to
+  `~/.claude`).
+- **Commands:** the plugin's slash commands, `/agent-teams-workforce:<command>`.
 <!-- END AGENT TEAMS WORKFORCE -->
 
 <!-- gitnexus:start -->
