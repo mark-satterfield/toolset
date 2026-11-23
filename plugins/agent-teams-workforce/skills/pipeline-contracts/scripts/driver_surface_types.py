@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 #: SHA-256 of the schema text this module was generated from.
-SCHEMA_SHA256: Final[str] = "c8df56ec24f21aafdf81bf352431db9bf7e341a687a0cb7d93029c57c81c0762"
+SCHEMA_SHA256: Final[str] = "d3965c8436dafe40dc07f7d5dbd57ade1f3c46936751d70491d8c7e4b97db7c9"
 #: The schema this module was generated from.
 SCHEMA_PATH: Final[Path] = Path(__file__).resolve().parent.parent / "schemas" / "driver-surface.schema.json"
 
@@ -39,6 +39,10 @@ PRD_DIR_ENV: Final[str] = "ATW_PRD_DIR"
 #: arguments by the architecture's index step once per pass, after the documents are written; optional:
 #: absent means the project keeps no such index.
 DOCS_INDEX_ENV: Final[str] = "ATW_DOCS_INDEX_COMMAND"
+#: The environment every CDK command of a deploy targets (synth, deploy, diff, destroy and any other),
+#: passed to the CDK app as `--context env=<name>`; the driver sets it from its own configuration and
+#: defaults it nowhere. Absent means the driver names no environment, and no CDK command runs.
+DEPLOY_ENV_ENV: Final[str] = "ATW_DEPLOY_ENV"
 #: The controller runtime's bin directory first, de-duplicated.
 PATH_ENV: Final[str] = "PATH"
 #: The dispatch scratch directory.
@@ -283,6 +287,7 @@ class DriverEnvironment(TypedDict):
     ATW_DESIGN_PACKAGES_DIR: NotRequired[str]
     ATW_PRD_DIR: NotRequired[str]
     ATW_DOCS_INDEX_COMMAND: NotRequired[str]
+    ATW_DEPLOY_ENV: NotRequired[str]
     PATH: str
     TMPDIR: str
     TMP: str

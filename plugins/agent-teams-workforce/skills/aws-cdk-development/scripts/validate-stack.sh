@@ -118,13 +118,15 @@ esac
 echo ""
 info "Running CDK synthesis..."
 
-# Synthesize stacks
-if cdk synth --quiet > /dev/null 2>&1; then
+# Synthesize stacks for the environment the deploy targets
+if [ -z "${ATW_DEPLOY_ENV:-}" ]; then
+    error "ATW_DEPLOY_ENV is unset, so no environment can be passed to cdk synth"
+    exit 1
+fi
+if cdk synth --quiet --context env="${ATW_DEPLOY_ENV}"; then
     success "CDK synthesis successful"
 else
-    error "CDK synthesis failed"
-    echo ""
-    echo "Run 'cdk synth' for detailed error information"
+    error "CDK synthesis failed; its output is above"
     exit 1
 fi
 

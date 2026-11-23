@@ -47,7 +47,7 @@ Before running any command, read the repository's `AGENTS.md` (or `CLAUDE.md`) f
 ## How to deploy
 
 1. **Choose the mechanism from what the repository actually executes.** When the repository has a CDK app, deploy the affected stack(s) with `cdk deploy`. Otherwise use the repository's own deploy path (its Taskfile, package.json scripts or deploy script). A task named `cdk:deploy` may run no CDK operation: read what it executes before you run it.
-2. **Deploy to dev only, with the dev AWS profile** (`--profile dev`). The account and the region are the profile's, resolved at deploy time; write none of them into any file.
+2. **Deploy to dev only, with the dev AWS profile** (`--profile dev`), naming the target environment in every `cdk` command as the `aws-cdk-development` skill's "Target environment" section specifies. The account and the region are the profile's, resolved at deploy time; write none of them into any file.
 3. **A static site** is a build, an `aws s3 sync` of the build output to its bucket and a CloudFront invalidation of its distribution. Wait for the invalidation to report `Completed` before any smoke test runs.
 4. **Never delete or replace data, a stack or a resource.** If a deploy would replace a data-holding resource, or a deploy errors, stop and report where and why, naming each stack's status; do not retry with changed flags. Recovering a stack CloudFormation must delete first, and clearing an orphan that blocks it, is done by the pipeline's deploy flow in code, in AWS dev only.
 5. **Record what was deployed:** the stacks you deployed and the commit SHA (`git -C <tree> rev-parse HEAD`).

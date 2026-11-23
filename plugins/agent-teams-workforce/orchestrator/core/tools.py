@@ -246,10 +246,11 @@ class CommandResult:
 
 @dataclass(frozen=True)
 class DeploymentTarget:
-    """Repository and explicit AWS profile for a deployment command."""
+    """Repository, explicit AWS profile and target environment for a deployment command."""
 
     repository: Path
     profile: str
+    environment: str
 
     @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
     def __post_init__(self) -> None:
@@ -262,6 +263,9 @@ class DeploymentTarget:
         if not isinstance(self.repository, Path) or not isinstance(self.profile, str):
             message: str = "Deployment target requires a repository Path and profile string"
             raise TypeError(message)
+        if not isinstance(self.environment, str) or not self.environment.strip():
+            missing: str = "Deployment target requires a non-empty environment name"
+            raise TypeError(missing)
         check_type(self.repository, Path, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
         check_type(self.profile, str, collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 
@@ -785,7 +789,7 @@ class Tools:
         stage: str,
         timeout: float = 300,
     ) -> CommandResult:
-        """Keep the AWS profile explicit and immediately after the subcommand.
+        """Keep the AWS profile explicit and immediately after the subcommand, then the target environment.
 
         Returns:
             The CDK command result.
@@ -803,7 +807,7 @@ class Tools:
             raise TypeError(argument_error)
         _command_arguments(args, timeout)
         return self.command(
-            ["cdk", subcommand, "--profile", target.profile, *args],
+            ["cdk", subcommand, "--profile", target.profile, "--context", f"env={target.environment}", *args],
             cwd=target.repository,
             stage=stage,
             timeout=timeout,

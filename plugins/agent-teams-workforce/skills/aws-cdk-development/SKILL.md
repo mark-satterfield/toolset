@@ -115,11 +115,18 @@ Pin the runtime to the latest Python runtime Lambda supports (check with the AWS
 
 **cdk-nag**: where the project's hooks run cdk-nag on synth, do not add or run it; write constructs that pass the AwsSolutions and Serverless packs (load `cdk-coding`). Acknowledge an accepted finding with the cdk-nag 3 Validations API as `cdk-coding` describes under "Acknowledging a finding"; `NagSuppressions` and Aspects are the removed v2 API. `aws-core:aws-cdk` shows the cdk-nag 2 API (`Aspects.of(app).add(...)`, `NagSuppressions`); that guidance is superseded here.
 
+### Target environment
+
+Every `cdk` command a deploy runs (`synth`, `deploy`, `diff`, `destroy` and any other) names the
+environment it targets as CDK context, `--context env="$ATW_DEPLOY_ENV"`, and never relies on the
+app's own fallback. `ATW_DEPLOY_ENV` is the variable the pipeline-contracts skill defines; when it is
+unset, run no `cdk` command and report that it is unset.
+
 Before deploying:
 
 1. **Synth**: Ensure the app synthesizes
    ```bash
-   cdk synth --profile dev
+   cdk synth --profile dev --context env="$ATW_DEPLOY_ENV"
    ```
 
 2. **Tests**: Run the repository's synth assertion tests (the test command the repository declares, for example `pytest`)

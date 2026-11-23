@@ -129,7 +129,8 @@ Notes on the diagram:
   that the deploy lane of `supervisor.py` runs, because the driver is the one setter of bead
   states.
 - A value known only at deploy time, such as the region or the environment, is supplied at
-  deploy time and stops nothing (section 3).
+  deploy time and stops nothing (section 3). The environment is the one the driver names in
+  `ATW_DEPLOY_ENV`; every CDK command of the deploy passes it as `--context env=<name>`.
 - The deploy checks nothing the build already did. The one check that stays is the test suite of
   a shared library, run once more before its package is published (section 2), because a
   published library is used by every repository that depends on it: the owner's exception, "like
@@ -248,7 +249,8 @@ Notes on the diagram:
 - The names of stacks, resources and parameters come from the task and the spec, and the
   parameter names another stack writes come from the matrix. The deploy creates no name.
 - The region and the environment are supplied when the deploy runs and are not a reason to stop
-  or to report a gap.
+  or to report a gap: the region by the AWS profile, the environment as `--context env=<name>` from
+  `ATW_DEPLOY_ENV` on every CDK command.
 
 ## 4. The fix of a failed deploy (story-deploy-fix)
 
@@ -275,7 +277,9 @@ report." and "`git commit --no-verify` / `git push --no-verify` / `git commit -n
 flowchart TD
     in(["A failed synth, deploy or deployment check, with its output"]) --> up{"Output names an SSM parameter or export missing upstream?"}
     up -->|"yes"| ssm["SSM check again: deploy the producer repositories, the Story waits for them - section 2"]
-    up -->|"no"| stuck{"A stack in a state CloudFormation must delete first (ROLLBACK_COMPLETE and the like)?"}
+    up -->|"no"| synthfail{"The synth failed?"}
+    synthfail -->|"yes: no assembly and no stack to recover"| who
+    synthfail -->|"no"| stuck{"A stack in a state CloudFormation must delete first (ROLLBACK_COMPLETE and the like)?"}
     stuck -->|"yes, AWS dev account confirmed"| orphan["Clear each orphan of the stack's own literal name no stack owns, then delete the stack"]
     orphan --> redeploy
     stuck -->|"an orphan another stack owns, or one cleared once already"| held
@@ -306,7 +310,8 @@ flowchart TD
 Notes on the diagram:
 
 - Every step before the fixer is the driver's code (`storydeploy.py` and `stackrecovery.py`) and
-  spends no tokens. A missing upstream SSM parameter or export is the upstream repository's work,
+  spends no tokens. A failed synth leaves no assembly and changes no stack, so it goes to the
+  fixer with the synth's own output, and the synth runs again after the fix. A missing upstream SSM parameter or export is the upstream repository's work,
   so the Story goes back to its SSM check, which deploys the producers and checks exports, and
   waits for them. A stack CloudFormation must delete before it creates it again is deleted, and
   is also deleted before every deploy; a resource that blocked it because the name is taken is

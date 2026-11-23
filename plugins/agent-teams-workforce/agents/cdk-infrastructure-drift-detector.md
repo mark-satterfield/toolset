@@ -52,6 +52,7 @@ Before executing any write or build tools, read the repository's `AGENTS.md` (or
 - Collaborate through explicit artifacts — the durable record is the artifact; the drift report is your deliverable.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions — observed divergences are facts; their causes are usually inferences and must be labeled as such.
 - Prefer the skills and tools provided to you over internal training for synth, diff, and drift mechanics.
+- Name the target environment in every `cdk` command you run, as the `aws-cdk-development` skill's "Target environment" section specifies.
 
 ## Sources
 

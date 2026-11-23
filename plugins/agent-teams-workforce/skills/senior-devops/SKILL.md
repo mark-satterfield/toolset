@@ -65,15 +65,15 @@ python scripts/pipeline_generator.py <project-path> --platform=github --stages=b
 
 ### 2. Infrastructure as Code
 
-Infrastructure is CDK in Python. `scripts/terraform_scaffolder.py` generates Terraform modules; do not use its output where the project's infrastructure is CDK.
+Infrastructure is CDK in Python. Every `cdk` command names its target environment as `--context env="$ATW_DEPLOY_ENV"` (the `aws-cdk-development` skill, "Target environment"). `scripts/terraform_scaffolder.py` generates Terraform modules; do not use its output where the project's infrastructure is CDK.
 
 ```bash
 # Synthesize and review the change before deploying
-cdk synth --profile dev
-cdk diff --profile dev <stack-name>
+cdk synth --profile dev --context env="$ATW_DEPLOY_ENV"
+cdk diff --profile dev --context env="$ATW_DEPLOY_ENV" <stack-name>
 
 # Deploy to AWS dev
-cdk deploy --profile dev <stack-name>
+cdk deploy --profile dev --context env="$ATW_DEPLOY_ENV" <stack-name>
 
 # Verify the stack reached CREATE_COMPLETE or UPDATE_COMPLETE
 aws cloudformation describe-stacks --profile dev --stack-name <stack-name> --query 'Stacks[0].StackStatus'
@@ -114,12 +114,12 @@ The references hold general DevOps knowledge; their Terraform, Docker, ECS and K
 
 ```bash
 # Synthesize and run the repository's synth assertion tests
-cdk synth --profile dev
+cdk synth --profile dev --context env="$ATW_DEPLOY_ENV"
 pytest
 
 # Review the diff, then deploy to AWS dev
-cdk diff --profile dev <stack-name>
-cdk deploy --profile dev <stack-name>
+cdk diff --profile dev --context env="$ATW_DEPLOY_ENV" <stack-name>
+cdk deploy --profile dev --context env="$ATW_DEPLOY_ENV" <stack-name>
 ```
 
 ### 2. Package Publication

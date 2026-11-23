@@ -99,6 +99,9 @@ session the environment `$defs.DriverEnvironment` lists. What an agent uses:
   requests a stop: how a stop is classified is the handback contract's business.
 - `ATW_EXECUTION_ID` — the driver execution id, always set for an orchestrator dispatch.
 - `ATW_ORCH_IDLE` — the orchestrator idle limit in seconds, a positive finite number; default 3600.
+- `ATW_DEPLOY_ENV` — the environment every infrastructure command of a deploy targets, set by the
+  driver from its own configuration and defaulted nowhere. How a command passes it is in the
+  `aws-cdk-development` skill ("Target environment").
 
 The plugin orchestrator reads the driver modules named in `x-driver` (headlessenv, fablewall,
 breaker, childproc) from `$ATW_CONTROL_REPO/<DRIVER_DIR_PARTS>`; the generated `HeadlessEnvironment`,
