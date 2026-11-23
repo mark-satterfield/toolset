@@ -37,7 +37,6 @@ from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from orchestrator.core import step_journal
 from orchestrator.core.agents import strict_json
-from orchestrator.core.findings import record_for_run
 from orchestrator.core.handback_contract import TRD_PHASE, verdict_event
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.journal_registry import script_step
@@ -50,6 +49,7 @@ from orchestrator.core.journal_steps import (
     file_artifact,
     value_artifact,
 )
+from orchestrator.core.step_findings import record_for_run
 from orchestrator.core.tools import Tools, env_path
 from orchestrator.flows.architecture_files import (
     ARTIFACT_TRD,

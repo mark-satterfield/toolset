@@ -22,10 +22,10 @@ from driver_surface_types import REGRESSION_TIMEOUT_DEFAULT, REGRESSION_TIMEOUT_
 from typeguard import check_type
 
 from orchestrator.core import step_journal
-from orchestrator.core.findings import record_for_run
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.journal_registry import Registry
 from orchestrator.core.journal_steps import Completion, StepGroup, StepRun, file_artifact, value_artifact
+from orchestrator.core.step_findings import record_for_run
 from orchestrator.core.tool_locks import seconds
 from orchestrator.flows import build_carried, build_policy, build_repository_setup, build_reuse
 from orchestrator.flows.build_repository_setup import REPOSITORY_SETUP_WORK, RESCOPE

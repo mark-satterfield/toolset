@@ -33,10 +33,10 @@ from typeguard import check_type
 
 from orchestrator.core import step_journal
 from orchestrator.core.agents import strict_json
-from orchestrator.core.findings import record_for_run
 from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.models import OWNERSHIP_REPLANS, OwnershipChangedError, ScopeChangedError, StepError
+from orchestrator.core.step_findings import record_for_run
 from orchestrator.core.tool_locks import ownership_lock
 from orchestrator.flows.architecture_files import read_context, read_result
 from orchestrator.flows.elaboration_files import ARTIFACT_ELEMENTS, control_repository, span_files

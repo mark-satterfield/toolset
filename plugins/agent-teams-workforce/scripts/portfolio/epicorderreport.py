@@ -8,12 +8,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final
 
-from epicorder import deciding, edges_made, label, unjudged
+from epicorderanalysis import deciding, edges_made, label, unjudged
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from epicorder import Analysis, Check, Dropped, Pair
+    from epicorderanalysis import Analysis, Check, Dropped, Pair
     from matrix_contract import EntryId
     from matrixshared import SharedItem
 

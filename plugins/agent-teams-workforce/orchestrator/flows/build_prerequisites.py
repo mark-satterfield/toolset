@@ -14,7 +14,7 @@ import hashlib
 import json
 from graphlib import CycleError, TopologicalSorter
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from orchestrator.core import portfolio_bootstrap  # ruff: ignore[unused-import] - Install shared contract paths.
 
@@ -28,11 +28,11 @@ from story_deploy_args import VERIFIED_STATUSES
 from typeguard import check_type
 
 from orchestrator.core import step_journal
-from orchestrator.core.findings import FindingKind, record_for_run
 from orchestrator.core.handback_contract import OTHER_CAUSE, WaitingProducer
 from orchestrator.core.io import JsonValue, write_json
 from orchestrator.core.journal_steps import Completion, StepGroup, StepRun, value_artifact
 from orchestrator.core.models import StepError
+from orchestrator.core.step_findings import record_for_run
 from orchestrator.core.tool_locks import control_repo
 from orchestrator.flows import build_prerequisite_work, build_repository_setup
 from orchestrator.flows.build_reviews import refresh_sources
@@ -47,6 +47,9 @@ from orchestrator.flows.build_state import (
     workspace_of,
 )
 from orchestrator.flows.build_workspace import git_operation
+
+if TYPE_CHECKING:
+    from orchestrator.core.findings import FindingKind
 
 
 def _completed_facts(path: Path) -> dict[str, JsonValue]:

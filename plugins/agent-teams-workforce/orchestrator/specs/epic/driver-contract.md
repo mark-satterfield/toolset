@@ -181,7 +181,7 @@ Readers: `attempts.py` (turns a handback into an `Outcome`), `failurecause.py`, 
 | Part | Used for |
 |---|---|
 | success flag | completed vs failed routing (`AttemptRunner._resolved`); quota clear, only for a dispatch started after the hold's latest trip; the cost record's completion |
-| stage | a stage in `STOP_STAGES` -> halted; `requires-human-action` (from an older plugin) -> an ordinary counted failure; `refusal.STAGE` with a refusal -> refusal; `breaker.QUOTA_STAGE` -> pause; the environment stages `handbackio` classifies -> environment failure origin; otherwise the fallback failure stage |
+| stage | a stage in `STOP_STAGES` -> halted; `requires-human-action` (from an older plugin) -> an ordinary counted failure; `refusal.STAGE` with a refusal -> refusal; `handbackstages.QUOTA_STAGE` -> pause; the environment stages in `handbackstages.ENVIRONMENT_STAGES` -> environment failure origin; otherwise the fallback failure stage |
 | `Failure` | the structured cause (`failurecause.stated_cause`): a cause in `RETRYABLE_CAUSES` backs off and retries, `OTHER_CAUSE` records the failure with its repository evidence; the classification decides item failure versus fatal stop (`FATAL_CLASSES`) |
 | failure origin | environment vs work (`ledgerevents.FailureOrigin`), recorded on the handback event; gates quota clearing, with the dispatch's start after the hold's latest trip |
 | headline | Outcome headline; quota/API pause detection (`breaker.pause_of`: Fable wall mark, usage-limit text and reset time); the human need when no action is named |

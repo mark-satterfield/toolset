@@ -17,7 +17,6 @@ from typeguard import check_type
 
 from orchestrator.core import pipeline_steps, step_journal
 from orchestrator.core.agents import AgentRunner
-from orchestrator.core.findings import record_for_run
 from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.journal_registry import Registry
@@ -31,6 +30,7 @@ from orchestrator.core.journal_steps import (
     value_artifact,
 )
 from orchestrator.core.models import RunContext, StepError
+from orchestrator.core.step_findings import record_for_run
 from orchestrator.core.tool_locks import control_repo, seconds
 from orchestrator.core.tools import Tools
 from orchestrator.flows import (

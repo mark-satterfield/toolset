@@ -23,7 +23,6 @@ from matrix_contract import KIND_DISAGREEMENT, REL_DISPUTES
 from matrixstore import read_matrix
 
 from orchestrator.core import step_journal
-from orchestrator.core.findings import record_for_run
 from orchestrator.core.journal_registry import agent_step
 from orchestrator.core.journal_steps import (
     AgentLaunch,
@@ -32,6 +31,7 @@ from orchestrator.core.journal_steps import (
     file_artifact,
     value_artifact,
 )
+from orchestrator.core.step_findings import record_for_run
 from orchestrator.flows.architecture_files import (
     ARCHITECTURE_FOLDER,
     ARTIFACT_RESOLVED,

@@ -23,9 +23,9 @@ from step_journal_contract import BeadId, Journal
 from typeguard import check_type
 
 from orchestrator.core import step_journal
-from orchestrator.core.findings import record_for_run
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.journal_steps import Completion, StepGroup, StepRun, value_artifact
+from orchestrator.core.step_findings import record_for_run
 from orchestrator.flows.build_sessions import OutputContract, latest, reasoned
 from orchestrator.flows.build_state import ARTIFACT_CONTRACTS, artifact_document, artifact_file, new_step
 from orchestrator.flows.elaboration_files import (

@@ -98,13 +98,13 @@ from typeguard import CollectionCheckStrategy, check_type, typechecked
 from orchestrator.core import step_journal
 from orchestrator.core.agent_context import SessionSetupError
 from orchestrator.core.driver_contracts import dispatch_arguments
-from orchestrator.core.findings import record_for_run
 from orchestrator.core.handback import failure_for
 from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.journal_registry import script_step
 from orchestrator.core.journal_steps import Completion, NewStep, StepGroup, StepRun, file_artifact, value_artifact
 from orchestrator.core.models import StepError
+from orchestrator.core.step_findings import record_for_run
 from orchestrator.core.tool_locks import file_lock, seconds
 from orchestrator.core.tools import Tools, env_path
 from orchestrator.flows.architecture_files import read_context, read_result

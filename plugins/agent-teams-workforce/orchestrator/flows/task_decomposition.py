@@ -41,7 +41,6 @@ from typeguard import CollectionCheckStrategy, check_type
 from orchestrator.core import step_journal
 from orchestrator.core.agents import CONTENT_FAILURES, strict_json
 from orchestrator.core.driver_contracts import dispatch_arguments
-from orchestrator.core.findings import record_for_run, record_skipped_cycles
 from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.journal_changes import create_child_journal
@@ -56,6 +55,7 @@ from orchestrator.core.journal_steps import (
     value_artifact,
 )
 from orchestrator.core.models import OutputValidator, StaleInputError, StepError
+from orchestrator.core.step_findings import record_for_run, record_skipped_cycles
 from orchestrator.flows.architecture_files import ARTIFACT_TRD
 from orchestrator.flows.build_ownership import owned_write, refuse_ownership_drift
 from orchestrator.flows.build_prerequisites import producer_candidates

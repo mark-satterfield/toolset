@@ -18,11 +18,11 @@ from typing import TYPE_CHECKING, Final
 
 from typeguard import check_type
 
-from orchestrator.core.findings import record_for_run
 from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.journal_steps import Completion, StepGroup, StepRun, value_artifact
 from orchestrator.core.models import StepError
+from orchestrator.core.step_findings import record_for_run
 from orchestrator.flows.build_sessions import OutputContract, reasoned, view_of
 from orchestrator.flows.build_state import CONTRACTS
 from orchestrator.flows.build_state import new_step as _new

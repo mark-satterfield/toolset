@@ -66,7 +66,6 @@ from step_journal_contract import STATUS_DONE
 from typeguard import CollectionCheckStrategy, TypeCheckError, check_type
 
 from orchestrator.core import step_journal
-from orchestrator.core.findings import record_for_run
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.journal_registry import script_step
 from orchestrator.core.journal_steps import (
@@ -76,6 +75,7 @@ from orchestrator.core.journal_steps import (
     StepRun,
     file_artifact,
 )
+from orchestrator.core.step_findings import record_for_run
 from orchestrator.flows import design_gaps
 from orchestrator.flows.architecture_files import (
     ARCHITECT,

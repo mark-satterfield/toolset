@@ -38,11 +38,11 @@ from step_journal_contract import STATUS_DONE
 from orchestrator.core import step_journal
 from orchestrator.core.agents import strict_json
 from orchestrator.core.driver_contracts import DispatchArguments, dispatch_arguments
-from orchestrator.core.findings import record_for_run
 from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.io import json_object, write_json
 from orchestrator.core.journal_steps import is_finish_of
 from orchestrator.core.models import PipelineDefectError, StaleInputError, StepError
+from orchestrator.core.step_findings import record_for_run
 
 if TYPE_CHECKING:
     from collections.abc import Callable

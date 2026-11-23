@@ -45,7 +45,6 @@ from spec_review_contract import (
 )
 
 from orchestrator.core.agents import check_files, strict_json
-from orchestrator.core.findings import record_for_run
 from orchestrator.core.handback_contract import OTHER_CAUSE
 from orchestrator.core.journal_registry import agent_step, script_step
 from orchestrator.core.journal_steps import (
@@ -58,6 +57,7 @@ from orchestrator.core.journal_steps import (
     value_artifact,
 )
 from orchestrator.core.models import StepError
+from orchestrator.core.step_findings import record_for_run
 from orchestrator.flows.architecture_files import ARTIFACT_TRD
 from orchestrator.flows.elaboration_files import (
     AUTHOR_CONTRACTS,

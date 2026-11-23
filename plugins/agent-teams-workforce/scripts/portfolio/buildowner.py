@@ -14,14 +14,56 @@ entry (``adds_to_entries``) never builds it.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, NotRequired, TypedDict
+from typing import TYPE_CHECKING, NotRequired, Protocol, TypedDict
 
 from contracts import BuiltBy
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from matrixtasks import TaskBead
+
+class BuildingTask(Protocol):
+    """What the ownership rule reads of a Task bead (``matrixtasks.TaskBead``)."""
+
+    @property
+    def id(self) -> str:
+        """The Task's bead id."""
+        ...
+
+    @property
+    def epic(self) -> str | None:
+        """The nearest Epic above the Task; None when it has none."""
+        ...
+
+    @property
+    def story(self) -> str | None:
+        """The nearest Story above the Task; None when it has none."""
+        ...
+
+    @property
+    def status(self) -> str:
+        """The Task's beads status."""
+        ...
+
+    @property
+    def started(self) -> bool:
+        """Whether the Task's build started."""
+        ...
+
+    @property
+    def created(self) -> str:
+        """When the Task was written."""
+        ...
+
+    @property
+    def spec_paths(self) -> tuple[str, ...]:
+        """The spec paths the Task builds against."""
+        ...
+
+    @property
+    def builds(self) -> tuple[str, ...]:
+        """The matrix ids of the entries the Task builds."""
+        ...
 
 
 class OwnedItem(TypedDict):
@@ -66,7 +108,7 @@ type BuilderIndex = dict[str, list[Builder]]
 """Entry id -> every Task, of any Epic, that builds it, in Task id order."""
 
 
-def builders(tasks: Sequence[TaskBead]) -> BuilderIndex:
+def builders(tasks: Sequence[BuildingTask]) -> BuilderIndex:
     """Index every Task that belongs to an Epic by the entries it builds.
 
     Args:

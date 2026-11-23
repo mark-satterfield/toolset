@@ -83,7 +83,6 @@ from specialist_catalog import agent_names
 from orchestrator.core import step_journal
 from orchestrator.core.agents import check_files, strict_json
 from orchestrator.core.driver_contracts import dispatch_arguments
-from orchestrator.core.findings import record_for_run
 from orchestrator.core.io import json_object
 from orchestrator.core.journal_registry import agent_step, any_agent_step, plan_under
 from orchestrator.core.journal_steps import (
@@ -97,6 +96,7 @@ from orchestrator.core.journal_steps import (
     value_artifact,
 )
 from orchestrator.core.models import MalformedRequestError, StaleInputError
+from orchestrator.core.step_findings import record_for_run
 from orchestrator.flows import design_gaps
 from orchestrator.flows.architecture_check import check_step, handed_checklist, review_log_findings
 from orchestrator.flows.architecture_diagrams import syntax_problems

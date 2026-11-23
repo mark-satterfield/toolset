@@ -32,10 +32,10 @@ from matrixwrite import approve
 from step_journal_contract import STATUS_DONE
 
 from orchestrator.core import step_journal
-from orchestrator.core.findings import record_for_run
 from orchestrator.core.io import write_json
 from orchestrator.core.journal_registry import script_step
 from orchestrator.core.journal_steps import Completion, StepRun, file_artifact, value_artifact
+from orchestrator.core.step_findings import record_for_run
 from orchestrator.flows.architecture_files import (
     ARCHITECTURE_FOLDER,
     LABEL_REQUEST,
