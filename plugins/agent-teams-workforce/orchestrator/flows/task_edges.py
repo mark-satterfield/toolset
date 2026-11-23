@@ -20,6 +20,8 @@ from typing import TYPE_CHECKING, Final
 # The Task dependency document is defined once, in the artifact-handoff skill.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "artifact-handoff" / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "beads-contract" / "scripts"))
+from itertools import starmap
+
 import beadgraph
 import beadwrite
 import strictschema
@@ -232,11 +234,8 @@ def _unordered_leftovers(run: StepRun, accepted: Mapping[str, JsonValue]) -> lis
     reasons: list[str] = [
         str(edge.get("reason", "")) for edge in check_type(accepted.get("edges", []), list[dict[str, JsonValue]])
     ]
-    unordered: list[str] = [
-        mark
-        for repository, row in leftover_rows(run.context.work)
-        if not any((mark := edge_mark(repository, row)) in reason for reason in reasons)
-    ]
+    marks: list[str] = list(starmap(edge_mark, leftover_rows(run.context.work)))
+    unordered: list[str] = [mark for mark in marks if not any(mark in reason for reason in reasons)]
     if not unordered:
         return []
     warning: str = (
