@@ -49,7 +49,7 @@ from orchestrator.flows.build_state import (
 from orchestrator.flows.build_workspace import git_operation
 
 if TYPE_CHECKING:
-    from orchestrator.core.findings import FindingKind
+    from finding_contract import FindingKind
 
 
 def _completed_facts(path: Path) -> dict[str, JsonValue]:

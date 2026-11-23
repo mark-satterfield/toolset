@@ -17,65 +17,13 @@ import json
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Final, Literal, TypedDict
 
+from finding_contract import FINDINGS_FILE, SOURCE_PLUGIN, Finding, FindingKind, owner_epic
+from finding_contract import finding as contract_finding
 from typeguard import CollectionCheckStrategy, typechecked
 
 from .events import EventSink
 from .handback_contract import NOTE_EVENT, WARNING_NOTE
-
-type FindingKind = Literal[
-    "matrix-problem",
-    "architecture-check-carried",
-    "output-schema-carried",
-    "trd-carried",
-    "span-problem",
-    "task-decomposition-carried",
-    "done-rule-carried",
-    "ownership-race",
-    "contract-finding",
-    "producer-missing",
-    "completion-cycle",
-    "prerequisite-unscheduled",
-    "regression-carried",
-    "prerequisite-carried",
-    "respec-request-converted",
-    "producer-epic-unordered",
-    "deploy-stopped",
-    "commit-hook-rejected",
-    "dependency-cycle",
-]
-"""What kind of problem a finding records."""
-
-Finding = TypedDict(
-    "Finding",
-    {
-        "at": str,
-        "owner": str,
-        "from": str,
-        "source": Literal["plugin", "driver"],
-        "stage": str,
-        "kind": FindingKind,
-        "detail": str,
-        "evidence": list[str],
-    },
-)
-"""One finding: when, whom it is addressed to, which bead's run found it, where, what and on what evidence."""
-
-FINDINGS_FILE: Final = "findings.jsonl"
-"""The file of one Epic's findings, in that Epic's work directory."""
-SOURCE_PLUGIN: Final[Literal["plugin"]] = "plugin"
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def owner_epic(owner: str) -> str:
-    """Name the Epic a finding's owner belongs to.
-
-    Returns:
-        The owner bead id cut at its first ``.`` (``ssbd-fcund.2.1`` gives ``ssbd-fcund``).
-
-    """
-    return owner.split(".", 1)[0]
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -113,16 +61,16 @@ def finding(  # ruff: ignore[too-many-arguments] - One finding names each of its
         The finding.
 
     """
-    return {
-        "at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "owner": owner,
-        "from": origin,
-        "source": SOURCE_PLUGIN,
-        "stage": stage,
-        "kind": kind,
-        "detail": " ".join(detail.split()),
-        "evidence": list(evidence),
-    }
+    return contract_finding(
+        owner,
+        origin,
+        at=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        source=SOURCE_PLUGIN,
+        stage=stage,
+        kind=kind,
+        detail=detail,
+        evidence=evidence,
+    )
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

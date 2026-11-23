@@ -61,7 +61,7 @@ from .driver_contracts import (
     reset_of,
 )
 from .events import EventSink, EventWriter
-from .findings import Finding, finding, record_finding
+from .findings import finding, record_finding
 from .handback_contract import (
     ACCOUNT_CAUSES,
     API_CAUSE,
@@ -939,15 +939,18 @@ class AgentRunner:
         changes: list[str] = step.repair(step.output)
         if not changes:
             return failed
-        entry: Finding = finding(
-            self.context.bead,
-            self.context.bead,
-            stage=step.stage,
-            kind="output-schema-carried",
-            detail=f"{step.output.name} repaired by its contract's repair: {'; '.join(changes)}",
-            evidence=(str(step.output),),
+        record_finding(
+            self.context.work.parent,
+            finding(
+                self.context.bead,
+                self.context.bead,
+                stage=step.stage,
+                kind="output-schema-carried",
+                detail=f"{step.output.name} repaired by its contract's repair: {'; '.join(changes)}",
+                evidence=(str(step.output),),
+            ),
+            self.emit,
         )
-        record_finding(self.context.work.parent, entry, self.emit)
         try:
             validate_output(step)
         except CONTENT_FAILURES as again:

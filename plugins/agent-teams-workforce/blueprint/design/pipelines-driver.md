@@ -409,7 +409,9 @@ Notes on the diagram:
 - No check stops a bead. Each check of elaboration, build and the driver gets bounded correction
   attempts; after them the bead continues and the problem is recorded as a finding in
   `<artifacts>/<owner Epic>/findings.jsonl` (the plugin's `orchestrator/core/findings.py`, the
-  driver's `findingrecord.py` and its `finding_recorded` ledger event). A finding addressed to
+  driver's `findingrecord.py` and its `finding_recorded` ledger event). The finding kinds and the
+  line are defined once, in the plugin's `skills/pipeline-contracts/scripts/finding_contract.py`,
+  which the driver loads from the installed plugin. A finding addressed to
   another Epic never counts against the Epic that found it. The one exception is a Task's tests: a
   Task closes only when they pass.
 - A `done` Epic is never dispatched for elaboration and nothing sets it back; no Story is

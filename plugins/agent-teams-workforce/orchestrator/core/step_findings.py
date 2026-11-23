@@ -8,7 +8,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .findings import Finding, FindingKind, finding, owner_epic, record_finding
+from finding_contract import Finding, FindingKind, owner_epic
+
+from .findings import finding, record_finding
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

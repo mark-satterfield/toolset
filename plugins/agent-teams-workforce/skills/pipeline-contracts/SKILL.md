@@ -5,11 +5,11 @@ description: The one place for the pipeline contracts agents and code share outs
 
 # Pipeline contracts
 
-Four contracts live here. Each is defined once, in this skill's `schemas/`; agents read this file
+Five contracts live here. Each is defined once, in this skill's `schemas/`; agents read this file
 and the schema, and code loads the generated module or reads the definition through one loader.
 Nothing outside this skill restates a variable name, a denied tool, a composite id, a phase id or
-title, a role set, a progress marker, a field of the step journal, a journal change line or a step
-kind of the build and deploy pipelines.
+title, a role set, a progress marker, a field of the step journal, a journal change line, a step
+kind of the build and deploy pipelines or a finding kind.
 This skill also documents the one public rule of the plugin the driver runs, the build's
 tooling-path rule (below); its definition is code, not a schema.
 
@@ -19,6 +19,7 @@ tooling-path rule (below); its definition is code, not a schema.
 | Composite names and phases | [schemas/composites.json](schemas/composites.json) under [schemas/composites.schema.json](schemas/composites.schema.json) | `scripts/composites_contract.py`, `scripts/shared-blocks/composite-phases.js` (plugin root) | `scripts/generate_composites.py` | `scripts/check_composites_contract.py` |
 | Step journal (one file per bead: its steps, each with its status, its session, its inputs and its artifacts), and the journal change a workflow script reports on its log (`definitions/journalChange`) | [schemas/step-journal.schema.json](schemas/step-journal.schema.json) | `scripts/step_journal_contract.py` | `scripts/generate_step_journal_contract.py` | the same script with `--check` |
 | Build and deploy steps (every step kind, what it records and reads, which steps its result adds, and the steps planned up front) | [schemas/pipeline-steps.json](schemas/pipeline-steps.json) under [schemas/pipeline-steps.schema.json](schemas/pipeline-steps.schema.json) | none: `orchestrator/core/pipeline_steps.py` reads and validates the file, and `scripts/shared-blocks.mjs` copies it into the `step-journal` shared block | none | `node scripts/shared-blocks.mjs --check` for the shared block |
+| Findings (the kinds of problem a check records without stopping, and the `findings.jsonl` line the plugin and the driver both append) | `scripts/finding_contract.py` (hand-written; it imports only the standard library so the driver loads it by path) | none | none | `orchestrator/check_driver_contracts.py` compares every finding kind the driver writes with it |
 
 An agent reads and changes a step journal only through the command `atw-step-journal` (plugin
 `bin/`), whose behaviour is `orchestrator/core/step_journal.py`; the orchestrator and the driver
@@ -131,9 +132,9 @@ Workflow scripts carry `scripts/shared-blocks/composite-phases.js` as a shared b
 
 ## Loading from code
 
-- Plugin Python imports `driver_surface_types` and `composites_contract` from this skill's
-  `scripts/` directory.
+- Plugin Python imports `driver_surface_types`, `composites_contract` and `finding_contract` from this
+  skill's `scripts/` directory.
 - The driver loads them through `pluginversion.plugin_file("skills", "pipeline-contracts",
-  "scripts", <module>)`, in `driversurface.contract()` and `compositecontract.contract()` /
-  `compositecontract.wire()`.
+  "scripts", <module>)`, in `driversurface.contract()`, `compositecontract.contract()` /
+  `compositecontract.wire()` and `findingrecord.contract()`.
 - `driver_surface_types.load_schema()` returns the driver-surface schema document.
