@@ -23,7 +23,7 @@ mcpServers:
 - awslabs-postgres-mcp-server
 - awslabs-amazon-neptune-mcp-server
 - gitnexus
-model: fable
+model: opus
 x-sessionLimit: 900
 permissionMode: acceptEdits
 maxTurns: 100

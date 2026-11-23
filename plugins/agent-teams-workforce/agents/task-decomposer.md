@@ -10,7 +10,7 @@ disallowedTools: AskUserQuestion
 mcpServers:
 - mcp-graphrag-server
 - gitnexus
-model: fable
+model: opus
 x-sessionLimit: 900
 permissionMode: acceptEdits
 maxTurns: 100
