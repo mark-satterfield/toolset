@@ -43,6 +43,7 @@ from orchestrator.flows.elaboration_support import (
 )
 
 if TYPE_CHECKING:
+    from beadcontracts import StoriesClosed
     from scoringcontracts import TaskScores
 
     from orchestrator.core.handback_contract import Failure
@@ -138,24 +139,39 @@ def apply_done_rule(run: StepRun) -> Completion:
     A repository that lacks its Story or its Tasks, and a Task left unscored, are recorded as
     ``done-rule-carried`` findings for the Epic, and the Epic is marked elaborated with what exists.
     Every open Story of the Epic that has no Task is closed with reason "no Tasks"
-    (``beadwrite.close_stories_without_tasks``).
+    (``beadwrite.close_stories_without_tasks``); each one that stays open is recorded as a
+    ``done-rule-carried`` finding.
 
     Returns:
-        The done rule's result, with the Stories closed for having no Task (``closedStories``).
+        The done rule's result, with the Stories closed for having no Task (``closedStories``), the
+        edges moved off them (``movedStoryEdges``) and each one that stayed open (``unclosedStories``).
 
     """
     enter_phase(run.context, run.agents.emit, FINISH_PHASE, DONE_RULE_STEP)
     repo: Path = Path(check_type(run.context.args[dispatch_arguments().KEY_BEADS_REPO_PATH], str))
 
-    def close() -> list[str]:
+    def close() -> StoriesClosed:
         graph: beadgraph.Graph = run.tools.portfolio_read(FINISH_PHASE, beadgraph.load, repo)
         writer: beadgraph.Writer = run.tools.portfolio(FINISH_PHASE, beadgraph.Writer, repo)
         return run.tools.portfolio(FINISH_PHASE, beadwrite.close_stories_without_tasks, graph, writer, str(run.bead))
 
-    closed: list[str] = run.tools.operation(FINISH_PHASE, close)
+    stories: dict[str, JsonValue] = json_object(run.tools.operation(FINISH_PHASE, close))
+    for failure in check_type(stories["failed"], list[JsonValue]):
+        record_for_run(
+            run,
+            str(run.bead),
+            kind="done-rule-carried",
+            detail=f"a Story with no Task stayed open: {json.dumps(failure)}",
+            evidence=(),
+        )
     unscored: list[JsonValue] = check_type(run.inputs.value(UNSCORED), list[JsonValue])
     rows: list[dict[str, JsonValue]] = repository_rows(run)
-    rule: dict[str, JsonValue] = {**done_rule(rows, True, unscored), "closedStories": list(closed)}
+    rule: dict[str, JsonValue] = {
+        **done_rule(rows, True, unscored),
+        "closedStories": stories["closed"],
+        "movedStoryEdges": stories["moved"],
+        "unclosedStories": stories["failed"],
+    }
     lacking: list[JsonValue] = check_type(rule["repositories"], list[JsonValue])
     if lacking:
         incomplete: Failure = repository_failure(rows)

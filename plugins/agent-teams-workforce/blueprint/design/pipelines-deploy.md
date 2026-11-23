@@ -65,7 +65,8 @@ detail in the sections that follow.
 and every Task of it is closed (`storyorder.deployable`), before any deploy step, `cdk` command or
 agent runs; a Story with no Task is never deployed. Elaboration creates a Story bead only in the
 transaction that creates its Tasks (`beadwrite.write_story_tasks`), and its done rule closes, with
-reason "no Tasks", any open Story of the Epic left with no Task. It takes one
+reason "no Tasks", any open Story of the Epic left with no Task, blocked or not, after moving each
+bead that waits for it onto what it waits for. It takes one
 Story at a time per repository, and runs its deploy through `storydeploy.run`, whose
 `deploy:close` step closes the Story bead (`ops/sdlc-automation/keeper.py`, `supervisor.py`, `selection.py`, `storyorder.py` and `storydeploy.py`); the requirements row for Deploy:
 "A Story whose Tasks are all built" producing "The Story's repository published and deployed to

@@ -286,6 +286,29 @@ class TaskReplacement(TypedDict):
     summary: ReplacementSummary
 
 
+class MovedStoryEdge(TypedDict):
+    """One `blocks` edge moved off a Story closed for having no Task, onto the Stories it waited for."""
+
+    dependent: str
+    closed: str
+    blockers: list[str]
+
+
+class StoryCloseFailure(TypedDict):
+    """One Story with no Task that stayed open, and the error that kept it open."""
+
+    story: str
+    error: str
+
+
+class StoriesClosed(TypedDict):
+    """What closing an Epic's Stories with no Task did: each Story closed, each edge moved, each failure."""
+
+    closed: list[str]
+    moved: list[MovedStoryEdge]
+    failed: list[StoryCloseFailure]
+
+
 class RepointedEdge(TypedDict):
     """One `blocks` edge moved from a deleted Task onto a Task that now builds the same item."""
 

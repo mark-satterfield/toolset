@@ -37,12 +37,15 @@ from beadcontracts import (
     EdgeCounts,
     EdgePlan,
     ExistingTask,
+    MovedStoryEdge,
     OrphanedPrerequisite,
     PlannedTask,
     ReplacedTask,
     RepointedEdge,
     RepointedPrerequisite,
+    StoriesClosed,
     StoryBuild,
+    StoryCloseFailure,
     StoryEdgeWrite,
     StoryTasksOptions,
     StoryTasksWrite,
@@ -1342,14 +1345,141 @@ def write_task(
 
 
 NO_TASKS_REASON: Final = "no Tasks"
+#: The `bd close` flag that closes a bead its open blockers would otherwise keep open.
+FORCE_CLOSE: Final = "--force"
+
+
+def _open_blockers(graph: Graph, bead: Bead) -> list[str]:
+    """Name the beads one bead still waits for.
+
+    Args:
+        graph: The tracker graph.
+        bead: The bead.
+
+    Returns:
+        Each `blocks` target that is not closed, or that the graph does not hold.
+
+    """
+    return [blocker for blocker in bead.blockers if blocker not in graph.beads or not graph.beads[blocker].closed]
+
+
+def _waited_for(graph: Graph, story_id: str, empty: set[str]) -> list[str]:
+    """Name the open beads a Story with no Task waits for, through each other Story with no Task it waits for.
+
+    Args:
+        graph: The tracker graph.
+        story_id: The Story with no Task.
+        empty: Every Story with no Task being closed.
+
+    Returns:
+        The open beads, none of them a Story with no Task, in id order.
+
+    """
+    seen: set[str] = set()
+    pending: list[str] = [story_id]
+    found: set[str] = set()
+    while pending:
+        current: str = pending.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        blockers: list[str] = _open_blockers(graph, graph.beads[current])
+        pending.extend(blocker for blocker in blockers if blocker in empty)
+        found.update(blocker for blocker in blockers if blocker not in empty)
+    return sorted(found)
+
+
+def _move_dependents(graph: Graph, writer: Writer, story_id: str, empty: set[str]) -> list[MovedStoryEdge]:
+    """Move each open bead's wait on a Story with no Task onto the beads that Story waits for.
+
+    A Story with no Task builds nothing, so a bead that waits for it waits, through it, for what it
+    waits for; the edge is removed and those waits are added in one write.
+
+    Args:
+        graph: The tracker graph.
+        writer: The tracker writer.
+        story_id: The Story with no Task.
+        empty: Every Story with no Task being closed; their own waits on each other are not moved.
+
+    Returns:
+        Each edge moved, in dependent id order, with the waits added in its place.
+
+    """
+    targets: list[str] = _waited_for(graph, story_id, empty)
+    dependents: list[Bead] = sorted(
+        (
+            bead
+            for bead in graph.beads.values()
+            if story_id in bead.blockers and not bead.closed and bead.id not in empty
+        ),
+        key=lambda bead: bead.id,
+    )
+    moved: list[MovedStoryEdge] = [
+        {
+            "dependent": bead.id,
+            "closed": story_id,
+            "blockers": [target for target in targets if target not in bead.blockers and target != bead.id],
+        }
+        for bead in dependents
+    ]
+    added: dict[str, list[str]] = {row["dependent"]: row["blockers"] for row in moved}
+    writer.write_blocks(added, [(row["dependent"], story_id) for row in moved])
+    return moved
+
+
+def _failure(story_id: str, error: beadgraph.GraphError) -> StoryCloseFailure:
+    """Record why one Story with no Task stayed open.
+
+    An error whose cause the enclosing operation retries is raised again instead.
+
+    Args:
+        story_id: The Story.
+        error: The tracker error.
+
+    Returns:
+        The failure.
+
+    """
+    if error.cause in beadgraph.RETRIED_CAUSES:
+        raise error
+    return {"story": story_id, "error": str(error)}
+
+
+def _close_empty_story(
+    graph: Graph,
+    writer: Writer,
+    story_id: str,
+    empty: set[str],
+) -> tuple[list[MovedStoryEdge], StoryCloseFailure | None]:
+    """Move one Story's dependents off it, then close it with reason "no Tasks", forced when it is blocked.
+
+    A Story whose dependents could not be moved stays open, so no bead loses a wait.
+
+    Returns:
+        The edges moved, and the failure that kept the Story open, or None.
+
+    """
+    try:
+        moved: list[MovedStoryEdge] = _move_dependents(graph, writer, story_id, empty)
+    except beadgraph.GraphError as exc:
+        return [], _failure(story_id, exc)
+    force: list[str] = [FORCE_CLOSE] if _open_blockers(graph, graph.beads[story_id]) else []
+    try:
+        writer.bd(["close", story_id, "--reason", NO_TASKS_REASON, *force])
+    except beadgraph.GraphError as exc:
+        return moved, _failure(story_id, exc)
+    return moved, None
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def close_stories_without_tasks(graph: Graph, writer: Writer, epic_id: str) -> list[str]:
+def close_stories_without_tasks(graph: Graph, writer: Writer, epic_id: str) -> StoriesClosed:
     """Close, with reason "no Tasks", every open Story of the Epic that has no Task.
 
     A Story exists only with its Tasks, so an open Story left with no Task when the Epic's
-    elaboration finishes is closed, never deleted.
+    elaboration finishes is closed, never deleted, after its dependents are moved
+    (`_move_dependents`); it is force-closed (`FORCE_CLOSE`) when its own blockers are still open.
+    A Story that fails to close is recorded and the others are still closed; a failure the
+    enclosing operation retries is raised.
 
     Args:
         graph: The tracker graph.
@@ -1357,7 +1487,7 @@ def close_stories_without_tasks(graph: Graph, writer: Writer, epic_id: str) -> l
         epic_id: The Epic.
 
     Returns:
-        The Stories closed, in id order.
+        The Stories closed and the edges moved, in id order, and each Story that stayed open with its error.
 
     """
     empty: list[str] = [
@@ -1366,9 +1496,15 @@ def close_stories_without_tasks(graph: Graph, writer: Writer, epic_id: str) -> l
         if not story.closed
         and not any(bead.parent == story.id and bead.kind == "task" for bead in graph.beads.values())
     ]
-    for story_id in empty:
-        writer.bd(["close", story_id, "--reason", NO_TASKS_REASON])
-    return empty
+    held: set[str] = set(empty)
+    outcomes: list[tuple[str, list[MovedStoryEdge], StoryCloseFailure | None]] = [
+        (story_id, *_close_empty_story(graph, writer, story_id, held)) for story_id in empty
+    ]
+    return {
+        "closed": [story_id for story_id, _, failure in outcomes if failure is None],
+        "moved": [edge for _, moved, _ in outcomes for edge in moved],
+        "failed": [failure for _, _, failure in outcomes if failure is not None],
+    }
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
