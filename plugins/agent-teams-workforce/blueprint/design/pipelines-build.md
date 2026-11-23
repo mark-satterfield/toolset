@@ -8,8 +8,9 @@ subprocesses, artifacts, correction bounds and journal transitions. Headless age
 reasoning, code, test and documentation work. No model session relays a command or parses its
 exit status.
 
-Documentation selection records `documentationSelection`. Its parameterless dispatcher plans
-one following `build:docs-specialist` step per selected agent, passing its `agent` parameter.
+Documentation selection records `documentationSelection`. Its dispatcher plans one following
+`build:docs-specialist` step per selected agent, passing its `agent` parameter, and the `review`
+parameter when the writers correct that review's documentation findings.
 An empty selection completes without writers. Each writer records `documentationWork` before
 the final independent review of the resulting diff.
 
@@ -194,7 +195,7 @@ carried with that rationale and the build continues to Green. Passing tests alon
 an unapproved review while an implementer is selected for its implementation findings.
 
 Code review findings identify the owner of each required correction: implementation, tests,
-tooling or contract. Legacy findings receive one fresh ownership review, never a filename-based
+documentation, tooling or contract. Legacy findings receive one fresh ownership review, never a filename-based
 classification. Test findings receive a fresh test-specialist selection, author fingerprints,
 factual suite execution and independent re-review, within the build correction allowance. An empty
 test-specialist selection with its rationale is the judgment that no test specialist can make the
@@ -203,9 +204,13 @@ with that rationale, the tree and governing sources are recorded, and the re-rev
 unchanged tree under unchanged sources carries them again rather than asking for another
 correction round.
 Implementation findings and suite failures go to the specialists the implementation-lead selects.
+Documentation findings (a README, a CHANGELOG, developer documentation) go to the documentation
+writers the documentation-lead selects (`build:correct-documents`, then `build:docs-write` with the
+review named), within the build correction allowance, and the code is reviewed again; once the
+allowance is spent they are carried. The implementation-lead is never handed a documentation finding.
 Tooling and contract findings are never assigned to product implementers and never stop the build:
 they are carried. The same holds for the shared-capability and CDS reviews and the final code
-review: their implementation and test findings are corrected within the allowance, and their
+review: their implementation, test and documentation findings are corrected within the allowance, and their
 contract and tooling findings, and any finding still open when the allowance is spent, are carried.
 A final review whose remaining findings are carried covers the current tree, so the final suite
 runs next. An empty corrective selection cannot count as completed work.

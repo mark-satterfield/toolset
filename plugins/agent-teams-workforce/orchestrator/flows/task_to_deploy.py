@@ -43,7 +43,7 @@ from orchestrator.flows import (
     build_prerequisites,
     build_repository_setup,
 )
-from orchestrator.flows.build_reviews import attach_reviews, refresh_sources, task_sources
+from orchestrator.flows.build_reviews import attach_reviews, correct_documents, refresh_sources, task_sources
 from orchestrator.flows.build_sessions import OutputContract, accepted_steps, attach, latest, reasoned, view_of
 from orchestrator.flows.build_state import (
     CONTRACTS,
@@ -90,6 +90,8 @@ FINAL_REVIEW_TREE: Final = "finalReviewTree"
 CARRY_REASON: Final = "its correction belongs to the contract or the tooling, or its correction allowance is spent"
 TESTS_UNOWNED: Final = "testCorrectionUnowned"
 """The content tree and governing sources on which the test lead selected no specialist for test findings."""
+REVIEW_DOCUMENTS: Final = "reviewDocumentationCorrection"
+"""The code review whose documentation-owned findings were handed to the documentation writers."""
 EMPTY_SELECTION: Final = "emptySelectionReselected"
 """The failing suite an empty implementer selection left uncorrected, handed to the implementation lead."""
 
@@ -642,7 +644,7 @@ def _select_implementers(run: StepRun) -> Completion:
         "code-correctness-reviewer",
         OutputContract(CONTRACTS / "build-review.schema.json", "codeReview"),
         "Review this Task's code and tests against architecture, requirements, quality and best practices. "
-        "Assign every non-note finding an owner: implementation, tests, tooling, or contract. "
+        "Assign every non-note finding an owner: implementation, tests, documentation, tooling, or contract. "
         "Judge current governing evidence, distinguishing derived Task/specification drift from owner decisions",
         followups=(_new("build:code-reviewed", "Decide what code work the suite and code review require"),),
     )
@@ -704,9 +706,9 @@ def _review_ownership(run: StepRun, findings: list[JsonValue]) -> Completion | N
 def _code_reviewed(run: StepRun) -> Completion:
     """Keep working on review findings even when the tests pass, and never stop on a finding.
 
-    Implementation and test findings go to their specialists. Contract and tooling findings, and
-    test findings still open when their correction allowance is spent, are carried: recorded on
-    this step and in the handback while the build continues.
+    Implementation, test and documentation findings go to their specialists. Contract and tooling
+    findings, and test and documentation findings still open when their correction allowance is
+    spent, are carried: recorded on this step and in the handback while the build continues.
 
     Returns:
         Test correction, specialist selection when the suite or implementation findings require
@@ -732,6 +734,11 @@ def _code_reviewed(run: StepRun) -> Completion:
         if not unowned and _count(run, "build:code-reviewed", "reviewTestCorrection") < build_rounds():
             return _review_test_correction(run, review)
         carried.extend(tests)
+    documents: list[JsonValue] = build_carried.documentation(required)
+    if documents:
+        if _started_with(run, "build:code-reviewed", REVIEW_DOCUMENTS) < build_rounds():
+            return _review_documentation_correction(run, review)
+        carried.extend(documents)
     work: list[JsonValue] = [finding for finding in required if json_object(finding)["owner"] == "implementation"]
     recorded: tuple[ValueArtifact, ...] = (build_carried.carry("codeReview", carried, CARRY_REASON),) if carried else ()
     if suite.get("exitCode") == 0 and not work and (review["approved"] is True or carried):
@@ -770,6 +777,18 @@ def _review_test_correction(run: StepRun, review: dict[str, JsonValue]) -> Compl
         artifacts=(*selected_tests.artifacts, value_artifact("reviewTestCorrection", review)),
         add=selected_tests.add,
     )
+
+
+def _review_documentation_correction(run: StepRun, review: dict[str, JsonValue]) -> Completion:
+    """Give the code review's documentation-owned findings to the documentation writers, then re-review.
+
+    Returns:
+        The documentation lead's selection, the writers' corrections and an independent re-review.
+
+    """
+    rereview: NewStep = _new("build:select-implementers", "Re-review the corrected documents and remaining findings")
+    selected: Completion = correct_documents(run, "codeReview", (rereview,))
+    return Completion(artifacts=(*selected.artifacts, value_artifact(REVIEW_DOCUMENTS, review)), add=selected.add)
 
 
 def _latest_suite(run: StepRun) -> dict[str, JsonValue]:
@@ -1484,8 +1503,9 @@ def _final_review(run: StepRun) -> Completion:
 def _final_review_checked(run: StepRun) -> Completion:
     """Correct the final review's findings within the allowance, and never stop on a finding.
 
-    Findings owned by the contract or the tooling are carried at once. Findings still open when
-    the correction allowance is spent are carried too, and the review then covers the current tree.
+    Findings owned by the contract or the tooling are carried at once; implementation, test and
+    documentation findings are corrected. Findings still open when the correction allowance is
+    spent are carried too, and the review then covers the current tree.
 
     Returns:
         Approval, approval with the carried findings recorded, or implementation and re-review steps.
@@ -1511,7 +1531,7 @@ def _final_review_checked(run: StepRun) -> Completion:
             StepGroup((
                 _new(
                     "build:correct-findings",
-                    "Resolve the final code review's implementation and test findings",
+                    "Resolve the final code review's implementation, test and documentation findings",
                     {"review": "finalCodeReview"},
                 ),
                 _new("build:final-review", "Independently review the final corrections"),

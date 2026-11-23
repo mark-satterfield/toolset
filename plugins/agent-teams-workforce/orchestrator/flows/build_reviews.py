@@ -24,7 +24,7 @@ from typeguard import check_type
 from orchestrator.core import step_journal
 from orchestrator.core.io import JsonValue, json_object, write_json
 from orchestrator.core.journal_registry import Registry
-from orchestrator.core.journal_steps import Completion, StepGroup, StepRun, file_artifact, value_artifact
+from orchestrator.core.journal_steps import Completion, NewStep, StepGroup, StepRun, file_artifact, value_artifact
 from orchestrator.core.step_findings import record_for_run
 from orchestrator.core.tool_locks import seconds
 from orchestrator.flows import build_carried, build_policy, build_repository_setup, build_reuse
@@ -58,6 +58,8 @@ from orchestrator.flows.build_state import (
 from orchestrator.flows.elaboration_files import project_root
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from step_journal_contract import Artifact, ValueArtifact
 
 REMAP: Final = ("build:regression-remap", "build:regression-map-review", "build:regression-verify")
@@ -964,22 +966,71 @@ def _audit_reviewed(run: StepRun) -> Completion:
 
 
 def _correct(run: StepRun) -> Completion:
-    """Select implementers for one review's unresolved findings, without a fresh whole-Task review.
+    """Select the specialists for one review's unresolved findings, without a fresh whole-Task review.
+
+    Documentation-owned findings go to the documentation lead and its writers; the other findings
+    the build corrects go to the implementation lead.
 
     Returns:
-        The implementation lead's selection for those findings and its plan.
+        The documentation lead's selection when every finding to correct is a document's, otherwise
+        the implementation lead's selection and its plan, followed by the documentation correction
+        when documents are owed too.
 
     """
     review: str = check_type(run.params()["review"], str)
+    findings: list[JsonValue] = check_type(_document(run, review)["findings"], list[JsonValue])
+    work: list[JsonValue] = build_carried.owned_here(build_carried.required(findings))
+    documents: list[JsonValue] = build_carried.documentation(work)
+    if documents and len(documents) == len(work):
+        return correct_documents(run, review)
+    then: tuple[NewStep, ...] = (
+        (_new("build:correct-documents", "Correct the review's documentation findings", {"review": review}),)
+        if documents
+        else ()
+    )
     return reasoned(
         run,
         "implementation-lead",
         OutputContract(CONTRACTS / "build-selection.schema.json", "implementationSelection"),
         f"Select the implementation specialists needed to resolve only the unresolved findings of the {review} "
         "review and the artifacts they name; accepted unrelated work stays as it is. Findings owned by the "
-        "contract or the tooling are carried as recorded residuals and are not implementation work",
-        followups=(_new("build:plan-code", "Plan the selected code specialists and suite check"),),
+        "contract or the tooling are carried as recorded residuals, and findings owned by documentation go to "
+        "the documentation writers; neither is implementation work",
+        followups=(_new("build:plan-code", "Plan the selected code specialists and suite check"), *then),
     )
+
+
+def correct_documents(run: StepRun, review: str, then: tuple[NewStep, ...] = ()) -> Completion:
+    """Select documentation writers for one review's documentation-owned findings.
+
+    Args:
+        run: The step that corrects the review's findings.
+        review: The artifact name of the review that raised the findings.
+        then: Steps that follow the writers' corrections, such as the re-review.
+
+    Returns:
+        The documentation lead's selection, followed by the selected writers' corrections.
+
+    """
+    return reasoned(
+        run,
+        "documentation-lead",
+        OutputContract(CONTRACTS / "build-selection.schema.json", "documentationSelection"),
+        f"Select the documentation specialists (for example readme-writer, changelog-writer or "
+        f"developer-documentation-writer) needed to resolve only the findings of the {review} review owned by "
+        "documentation, and the documents they name",
+        followups=(_new("build:docs-write", "Correct the review's documentation findings", {"review": review}), *then),
+    )
+
+
+def _correct_documents(run: StepRun) -> Completion:
+    """Start the documentation correction of the review a step names.
+
+    Returns:
+        The documentation lead's selection and the selected writers' corrections.
+
+    """
+    return correct_documents(run, check_type(run.params()["review"], str))
 
 
 def _docs(run: StepRun) -> Completion:
@@ -1012,8 +1063,11 @@ def _docs_write(run: StepRun) -> Completion:
     agents: list[str] = check_type(_document(run, "documentationSelection")["agents"], list[str])
     if not agents:
         return Completion()
+    review: str = check_type(run.params().get("review", ""), str)
+    reviewed: dict[str, JsonValue] = {"review": review} if review else {}
     steps = tuple(
-        _new("build:docs-specialist", f"Update stale documentation with {agent}", {"agent": agent}) for agent in agents
+        _new("build:docs-specialist", f"Update stale documentation with {agent}", {"agent": agent, **reviewed})
+        for agent in agents
     )
     return Completion(add=(StepGroup(steps),))
 
@@ -1025,12 +1079,19 @@ def _docs_specialist(run: StepRun) -> Completion:
         Its genuine writing session.
 
     """
-    agent: str = check_type(run.params()["agent"], str)
+    params: Mapping[str, JsonValue] = run.params()
+    agent: str = check_type(params["agent"], str)
+    review: str = check_type(params.get("review", ""), str)
+    request: str = (
+        f"Resolve the findings of the {review} review owned by documentation, in the documents they name"
+        if review
+        else "Update the documents this Task's code and tests made stale"
+    )
     return reasoned(
         run,
         agent,
         OutputContract(CONTRACTS / "build-implementation.schema.json", "documentationWork"),
-        "Update the documents this Task's code and tests made stale",
+        request,
     )
 
 
@@ -1063,6 +1124,7 @@ def attach_reviews(registry: Registry) -> None:
         "build:infra-intent": _infrastructure,
         "build:audit-reviewed": _audit_reviewed,
         "build:correct-findings": _correct,
+        "build:correct-documents": _correct_documents,
         "build:docs-audit": _docs,
         "build:docs-write": _docs_write,
         "build:docs-specialist": _docs_specialist,

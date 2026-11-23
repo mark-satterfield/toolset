@@ -1,7 +1,8 @@
 """Carry review findings the build does not correct, so they are recorded rather than stop the build.
 
 A review finding is a judgment that something should change, never an error. The build corrects
-the findings its own specialists own (implementation and tests) within the correction allowance.
+the findings its own specialists own (implementation, tests and documentation) within the correction
+allowance.
 A finding owned by the contract or the tooling, and a finding still open when its correction
 allowance is spent, is carried: recorded on the deciding step as the ``carriedFindings`` value
 artifact and reported in the build handback, and the build continues.
@@ -23,6 +24,8 @@ CARRIED: Final = "carriedFindings"
 """The value artifact that holds the review findings a step carried instead of correcting."""
 CARRIED_OWNERS: Final = frozenset({"contract", "tooling"})
 """Owners whose corrections no build specialist makes: the governing requirements, and the tooling."""
+DOCUMENTATION: Final = "documentation"
+"""The owner of a finding whose correction is to a document, made by a documentation writer."""
 NOTE: Final = "note"
 UNASSIGNED: Final = "unassigned"
 KEPT_FIELDS: Final = ("severity", "detail", "file", "line")
@@ -69,6 +72,16 @@ def owned_here(findings: list[JsonValue]) -> list[JsonValue]:
 
     """
     return [finding for finding in findings if json_object(finding).get("owner") not in CARRIED_OWNERS]
+
+
+def documentation(findings: list[JsonValue]) -> list[JsonValue]:
+    """Select the findings whose correction is to a document.
+
+    Returns:
+        The findings the documentation writers correct.
+
+    """
+    return [finding for finding in findings if json_object(finding).get("owner") == DOCUMENTATION]
 
 
 def carry(review: str, findings: list[JsonValue], reason: str) -> ValueArtifact:

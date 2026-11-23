@@ -44,10 +44,11 @@
             "enum": [
               "implementation",
               "tests",
+              "documentation",
               "tooling",
               "contract"
             ],
-            "description": "Owner of the corrective work. Required for every non-note code review finding; absent only in legacy artifacts. Contract means an unresolved governing or derived requirements inconsistency, not an implementation choice."
+            "description": "Owner of the corrective work. Required for every non-note code review finding; absent only in legacy artifacts. Documentation means the correction is to a document (a README, a CHANGELOG or developer documentation), made by a documentation writer. Contract means an unresolved governing or derived requirements inconsistency, not an implementation choice."
           }
         }
       }
