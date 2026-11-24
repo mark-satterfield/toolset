@@ -15,13 +15,18 @@ re-runs only when an input changed.
 
 A directory inside a git work tree is fingerprinted by its tree at ``HEAD`` with its uncommitted
 changes (``git status`` and ``git diff HEAD``), so a checkout's ignored folders are never read; any
-other directory by the content of every file under it.
+other directory by the content of every file under it, leaving out the pipeline's own bookkeeping:
+the paths the caller names (a work directory's session marks, session scratch, run record and the
+like, which change with every session and are read by no agent), every file being written in place
+of another (:data:`TEMPORARY_SUFFIX`) and every fingerprint record. A file that is removed between
+listing the directory and reading it is absent, as if it had not been listed.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import subprocess  # ruff: ignore[suspicious-subprocess-import] - Fixed git argv, no shell.
 from collections.abc import Collection, Sequence
@@ -30,7 +35,7 @@ from typing import Final
 
 from typeguard import CollectionCheckStrategy, typechecked
 
-from .io import JsonValue, json_object, write_json
+from .io import TEMPORARY_SUFFIX, JsonValue, json_object, write_json
 
 INPUTS_SUFFIX: Final = ".inputs.json"
 """The suffix of the file beside an output that records the fingerprint it was accepted with."""
@@ -81,17 +86,73 @@ def _git_state(directory: Path) -> bytes | None:
     return b"\0".join(output for output in outputs if output is not None)
 
 
-def _tree_files(directory: Path) -> list[Path]:
-    """List every file under a directory outside a git work tree, in a stable order.
+def _left_out(path: Path, left_out: Collection[Path]) -> bool:
+    """Tell whether a path under a fingerprinted directory is bookkeeping rather than an input.
 
     Returns:
-        The files, sorted, leaving out anything inside a ``.git`` folder.
+        True for a ``.git`` folder, a path the caller names, a file being written in place of
+        another and a fingerprint record.
 
     """
-    return sorted(path for path in directory.rglob("*") if path.is_file() and GIT_DIRECTORY not in path.parts)
+    return (
+        path.name == GIT_DIRECTORY
+        or path in left_out
+        or path.name.endswith(TEMPORARY_SUFFIX)
+        or path.name.endswith(INPUTS_SUFFIX)
+    )
 
 
-def _content(path: Path) -> bytes:
+def _tree_files(directory: Path, left_out: Collection[Path]) -> list[Path]:
+    """List every file under a directory outside a git work tree, in a stable order.
+
+    A folder that is removed while it is walked is skipped (``os.walk`` ignores the error).
+
+    Args:
+        directory: The directory to walk.
+        left_out: The paths to leave out with everything under them (:func:`_left_out`).
+
+    Returns:
+        The files, sorted.
+
+    """
+    files: list[Path] = []
+    for folder, subfolders, names in os.walk(directory):
+        here: Path = Path(folder)
+        subfolders[:] = [name for name in subfolders if not _left_out(here / name, left_out)]
+        files.extend(here / name for name in names if not _left_out(here / name, left_out))
+    return sorted(files)
+
+
+def _read(file: Path) -> bytes | None:
+    """Read a file that another process may remove at any moment.
+
+    Returns:
+        Its bytes, or None when it no longer exists or is no longer a file.
+
+    """
+    try:
+        return file.read_bytes()
+    except FileNotFoundError, IsADirectoryError, NotADirectoryError:
+        return None
+
+
+def _tree_content(directory: Path, left_out: Collection[Path]) -> bytes:
+    """Read the names and bytes of the files under a directory outside a git work tree.
+
+    Returns:
+        Each file's path relative to the directory and its bytes; a file removed since it was
+        listed is left out.
+
+    """
+    read: list[tuple[Path, bytes | None]] = [(file, _read(file)) for file in _tree_files(directory, left_out)]
+    return b"\0".join(
+        str(file.relative_to(directory)).encode("utf-8") + b"\0" + content
+        for file, content in read
+        if content is not None
+    )
+
+
+def _content(path: Path, left_out: Collection[Path]) -> bytes:
     """Read what a path holds for the fingerprint.
 
     Returns:
@@ -100,47 +161,48 @@ def _content(path: Path) -> bytes:
 
     """
     if path.is_file():
-        return path.read_bytes()
+        content: bytes | None = _read(path)
+        return MISSING if content is None else content
     if not path.is_dir():
         return MISSING
     state: bytes | None = _git_state(path)
     if state is not None:
         return state
-    return b"\0".join(
-        str(file.relative_to(path)).encode("utf-8") + b"\0" + file.read_bytes() for file in _tree_files(path)
-    )
+    return _tree_content(path, left_out)
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def input_fingerprint(facts: JsonValue, paths: Sequence[Path]) -> str:
+def input_fingerprint(facts: JsonValue, paths: Sequence[Path], left_out: Collection[Path] = ()) -> str:
     """Fingerprint what a step's session works from.
 
     Args:
         facts: Every input that is a value: the request, the outcome, the input artifacts as
             the journal records them.
         paths: Every file and directory the session reads; each is fingerprinted by content.
+        left_out: Bookkeeping paths inside those directories that are no input of any session.
 
     Returns:
         The SHA-256 hex digest.
 
     """
-    return input_fingerprints([facts], paths)[0]
+    return input_fingerprints([facts], paths, left_out)[0]
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def input_fingerprints(facts: Sequence[JsonValue], paths: Sequence[Path]) -> list[str]:
+def input_fingerprints(facts: Sequence[JsonValue], paths: Sequence[Path], left_out: Collection[Path] = ()) -> list[str]:
     """Fingerprint the same files under each of several sets of facts, reading every file once.
 
     Args:
         facts: The sets of facts, as :func:`input_fingerprint` takes one.
         paths: Every file and directory the session reads.
+        left_out: Bookkeeping paths inside those directories that are no input of any session.
 
     Returns:
         One SHA-256 hex digest per set of facts, in order; each equals :func:`input_fingerprint` of it.
 
     """
     files: bytes = b"".join(
-        b"\0" + str(path).encode("utf-8") + b"\0" + hashlib.sha256(_content(path)).digest()
+        b"\0" + str(path).encode("utf-8") + b"\0" + hashlib.sha256(_content(path, left_out)).digest()
         for path in sorted(dict.fromkeys(paths), key=str)
     )
     return [hashlib.sha256(json.dumps(fact, sort_keys=True).encode("utf-8") + files).hexdigest() for fact in facts]

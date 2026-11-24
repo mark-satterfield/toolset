@@ -16,6 +16,8 @@ type JsonValue = bool | int | float | str | list[JsonValue] | dict[str, JsonValu
 WORK_DIRECTORY_PARTS: Final[tuple[str, ...]] = (".claude", "workflow-runs", "artifacts")
 """Where, inside the control repository, the work directory of every Epic is held."""
 SAFE_KEY_LENGTH: Final = 120
+TEMPORARY_SUFFIX: Final = ".tmp"
+"""The suffix of a file being written in place of another, before it replaces it."""
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -74,7 +76,14 @@ def write_json(path: Path, payload: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = None
     try:
-        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as handle:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=TEMPORARY_SUFFIX,
+            delete=False,
+        ) as handle:
             temporary = Path(handle.name)
             json.dump(checked, handle, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
             handle.write("\n")

@@ -30,6 +30,7 @@ from . import portfolio_bootstrap  # ruff: ignore[unused-import] - Imported for 
 import jsonschema
 import strictschema
 from driver_surface_types import ARCH_PATH_ENV, EXECUTION_ID_ENV, SESSION_LIMIT_ENV, STOP_FILE_ENV, WALL_PROBE_TIMEOUT
+from finding_contract import FINDINGS_FILE
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from .agent_context import (
@@ -80,8 +81,16 @@ from .handback_contract import (
     session_event,
 )
 from .io import JsonValue, json_object, safe_key, write_json
-from .manifest import record_session
-from .models import AgentStep, PipelineDefectError, RunContext, SessionFacts, StepError, wait_meter
+from .manifest import RUN_MANIFEST_FILE, record_session
+from .models import (
+    WAIT_METRICS_FOLDER,
+    AgentStep,
+    PipelineDefectError,
+    RunContext,
+    SessionFacts,
+    StepError,
+    wait_meter,
+)
 from .tools import Tools
 
 # isort: split
@@ -94,6 +103,10 @@ PLUGIN_COMMANDS: Final = "bin"
 SESSION_MARKS: Final = "sessions"
 """The folder of the work directory that records, per session id, the agent, the contract schemas
 and the fingerprint (``agent_fingerprint``) the session was started under."""
+SESSION_SCRATCH: Final = "scratch"
+"""The folder of the work directory that holds each run's session scratch (its temporary files)."""
+RUNNER_ERROR_SUFFIX: Final = ".runner-error.txt"
+"""The suffix of the file in the work directory that holds the traceback of a session runner's own failure."""
 FABLE: Final = "fable"
 FABLE_REPLACEMENT: Final = MappingProxyType({FABLE: "opus"})
 """The model every agent whose definition states Fable runs on while the Fable allowance is spent."""
@@ -582,6 +595,21 @@ class AgentRunner:
         )
         self.context.model_policy.setdefault("fable_blocked", False)
 
+    def bookkeeping(self) -> frozenset[Path]:
+        """Name the pipeline's own records in the work directory, which no session reads as an input.
+
+        They change with every session (session marks and scratch, wait metrics, the run record,
+        findings and runner tracebacks), so the input fingerprint of a step whose session may read
+        the work directory leaves them out (``core.input_fingerprint``).
+
+        Returns:
+            The paths of those records, files and folders, in the work directory.
+
+        """
+        work: Path = self.context.work
+        named: tuple[str, ...] = (SESSION_MARKS, SESSION_SCRATCH, WAIT_METRICS_FOLDER, RUN_MANIFEST_FILE, FINDINGS_FILE)
+        return frozenset((*(work / name for name in named), *work.glob(f"*{RUNNER_ERROR_SUFFIX}")))
+
     def _session_mark(self, session_id: str) -> Path:
         return self.context.work / SESSION_MARKS / f"{session_id}.json"
 
@@ -743,7 +771,7 @@ class AgentRunner:
                 self.processes.stop_all(cause=exc.cause, resume_at=exc.resume_at)
             raise
         except Exception as exc:
-            evidence: Path = self.context.work / f"{safe_key(step.stage)}.runner-error.txt"
+            evidence: Path = self.context.work / f"{safe_key(step.stage)}{RUNNER_ERROR_SUFFIX}"
             evidence.parent.mkdir(parents=True, exist_ok=True)
             evidence.write_text(traceback.format_exc(), encoding="utf-8")
             raise StepError(step.stage, OTHER_CAUSE, (str(evidence),)) from exc
@@ -794,7 +822,7 @@ class AgentRunner:
             is recorded in the run record.
 
         """
-        scratch: Path = self.context.work / "scratch" / safe_key(self.context.run_id)
+        scratch: Path = self.context.work / SESSION_SCRATCH / safe_key(self.context.run_id)
         env: dict[str, str] = check_type(
             child_environment(scratch),
             dict[str, str],

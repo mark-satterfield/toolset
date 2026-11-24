@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import logging
-import os
 import sys
 import time
 import traceback
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from functools import partial
 from operator import itemgetter
 from pathlib import Path
 from typing import Concatenate, ParamSpec, TypeVar
@@ -16,7 +16,6 @@ from typing import Concatenate, ParamSpec, TypeVar
 # The driver surface is defined once, in the pipeline-contracts skill.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "pipeline-contracts" / "scripts"))
 import beadgraph
-from driver_surface_types import STOP_FILE_ENV, STOP_FILE_MODE
 from typeguard import CollectionCheckStrategy, check_type, typechecked
 
 from orchestrator.core.driver_contracts import DispatchArguments, dispatch_arguments
@@ -35,6 +34,7 @@ from orchestrator.core.handback_contract import (
     TRANSIENT_CLASS,
     EventName,
     Failure,
+    FailureClass,
     OrchestratorEvent,
     PrdToSpecPhase,
     RepositoryFailure,
@@ -110,7 +110,10 @@ def enter_phase(
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
 def failed(stage: str, exc: Exception, repository: str = "", *, agent_started: bool = False) -> dict[str, JsonValue]:
-    """Preserve and classify a failed phase before another session can start.
+    """Preserve and classify a failed phase of this item.
+
+    The failure is the item's own: it is handed back for the driver to decide what it stops, and it
+    never requests the run-wide stop (``ATW_STOP_FILE``).
 
     Returns:
         The phase result with the complete original diagnostic.
@@ -127,10 +130,6 @@ def failed(stage: str, exc: Exception, repository: str = "", *, agent_started: b
     ):
         raise TypeError(_ARGUMENT_ERROR)
     failure: Failure = failure_for(stage, exc, agent_started=agent_started)
-    if failure["classification"] in FATAL_CLASSES:
-        marker: str | None = os.environ.get(STOP_FILE_ENV)
-        if marker:
-            Path(marker).touch(mode=STOP_FILE_MODE)
     if failure["classification"] == INTERRUPTED_CLASS:
         stage = failure["stage"]
     return json_object({
@@ -149,9 +148,11 @@ def parallel[T](context: RunContext, jobs: list[Callable[[], T]]) -> list[T]:
     At most ``ATW_ORCH_SESSIONS`` jobs (:func:`session_cap`) run at once; the others wait in the
     queue, not in a thread of their own, and the job's agent sessions still take the dispatch's
     session slots. Results are collected as each job ends; every job runs to its end whatever a
-    sibling did, and the dominant failure is raised after all have ended. Live groups are
-    terminated only on interruption. The time each job waited in the queue is recorded in the
-    work directory's wait metrics (:func:`wait_meter`).
+    sibling did, and the dominant failure is raised after all have ended (:func:`_parallel_results`).
+    A job's failure is this item's alone: it never requests the run-wide stop (``ATW_STOP_FILE``),
+    which would stop every other item's work. Live groups are terminated only on interruption. The
+    time each job waited in the queue is recorded in the work directory's wait metrics
+    (:func:`wait_meter`).
 
     Returns:
         Job results in the original submission order.
@@ -170,18 +171,7 @@ def parallel[T](context: RunContext, jobs: list[Callable[[], T]]) -> list[T]:
 
     def invoke(job: Callable[[], T], queued: float) -> T:
         meter.waited("job-queue", time.monotonic() - queued)
-        try:
-            return job()
-        except Exception as exc:
-            failure: Failure = failure_for(context.stage, exc, agent_started=bool(context.sessions))
-            if failure["classification"] in FATAL_CLASSES:
-                marker: str | None = os.environ.get(STOP_FILE_ENV)
-                if marker:
-                    try:
-                        Path(marker).touch(mode=STOP_FILE_MODE)
-                    except OSError as marker_error:
-                        exc.add_note(f"Stop marker also failed: {marker_error}")
-            raise
+        return job()
 
     pool: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=max(1, min(len(jobs), session_cap())))
     try:
@@ -195,10 +185,25 @@ def parallel[T](context: RunContext, jobs: list[Callable[[], T]]) -> list[T]:
         pool.shutdown(wait=True, cancel_futures=True)
 
 
+def _dominance(context: RunContext, error: BaseException) -> tuple[bool, int]:
+    """Rank a concurrent job's failure: its own failure above an interruption, then by severity.
+
+    Returns:
+        Whether the failure is not an interruption, then its classification's place in ``CLASS_ORDER``.
+
+    """
+    classification: FailureClass = failure_for(context.stage, error, agent_started=bool(context.sessions))[
+        "classification"
+    ]
+    return classification != INTERRUPTED_CLASS, CLASS_ORDER.index(classification)
+
+
 def _parallel_results[T](context: RunContext, futures: list[Future[T]]) -> list[T]:
     """Collect each job's outcome as it ends, then raise the dominant failure or return the results.
 
-    Failures are compared in submission order, so of equally dominant failures the earliest job's wins.
+    A job's own failure dominates an interruption, so a stop that followed it never hides the real
+    cause; among failures of the same kind the more severe classification (``CLASS_ORDER``) wins,
+    and of equally dominant failures the earliest job's, in submission order.
 
     Returns:
         The results in submission order.
@@ -213,12 +218,7 @@ def _parallel_results[T](context: RunContext, futures: list[Future[T]]) -> list[
             failed.append((position[future], error))
     errors: list[BaseException] = [error for _, error in sorted(failed, key=itemgetter(0))]
     if errors:
-        dominant: BaseException = max(
-            errors,
-            key=lambda error: CLASS_ORDER.index(
-                failure_for(context.stage, error, agent_started=bool(context.sessions))["classification"],
-            ),
-        )
+        dominant: BaseException = max(errors, key=partial(_dominance, context))
         for error in errors:
             if error is not dominant:
                 dominant.add_note("Concurrent phase failure:\n" + "".join(traceback.format_exception(error)))

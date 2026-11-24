@@ -62,19 +62,19 @@ this file and restates none of its fields.
 """
 
 SETUP_CLASS: Final[FailureClass] = "setup"
-"""The run could not be configured or launched; new dispatch stops."""
+"""The run could not be configured or launched; a failure of the item, never restated as a stop or a pause."""
 TRANSIENT_CLASS: Final[FailureClass] = "transient"
 """A failure expected to clear with time (API, quota, contention, network)."""
 ITEM_CLASS: Final[FailureClass] = "item"
 """A failure of this item's work; other items continue."""
 DEFECT_CLASS: Final[FailureClass] = "pipeline-code-defect"
-"""A defect in pipeline code; new dispatch stops."""
+"""A defect in pipeline code; a failure of the item, never restated as a stop or a pause."""
 INTERRUPTED_CLASS: Final[FailureClass] = "interrupted"
 """An owner stop-execution, SIGTERM or supervisor shutdown; never a failure of the item."""
 
 FAILURE_CLASSES: Final[frozenset[FailureClass]] = frozenset(get_args(FailureClass.__value__))
 FATAL_CLASSES: Final[frozenset[FailureClass]] = frozenset({SETUP_CLASS, DEFECT_CLASS})
-"""Classifications that stop new dispatch and drain current steps."""
+"""Classifications the driver records as the item's failure even when a shutdown or an account wall followed them."""
 CLASS_ORDER: Final[tuple[FailureClass, ...]] = (
     ITEM_CLASS,
     TRANSIENT_CLASS,

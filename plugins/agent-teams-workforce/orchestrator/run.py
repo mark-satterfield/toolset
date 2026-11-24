@@ -215,7 +215,7 @@ def main(argv: list[str] | None = None) -> int:
     the options that carry the handback path. A missing control repository or an unloadable
     contract therefore raises before any handback path is known: the process exits non-zero and
     writes no handback, and the driver reads the absent handback as a rejected document
-    (classification ``pipeline-code-defect``), which stops new dispatch. Once the contract is
+    (classification ``pipeline-code-defect``). Once the contract is
     loaded, a command line the full parse refuses writes a setup handback to the handback path
     the command line names, when it names one readably.
 

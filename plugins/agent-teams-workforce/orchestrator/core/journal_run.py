@@ -1753,7 +1753,8 @@ class JournalRunner:
         the files are every file and directory artifact among the inputs, the launch's files and the
         directories the session may read. The agent definition, its output contract and the plugin
         version are not inputs. The journal file is left out: it changes with every step, and what a
-        step reads from it is its input artifacts.
+        step reads from it is its input artifacts. So are the pipeline's own records in the work
+        directory (``AgentRunner.bookkeeping``), which change with every session and no session reads.
 
         Args:
             step: The agent step.
@@ -1778,7 +1779,11 @@ class JournalRunner:
             *launch.add_dirs,
         ]
         variants: list[JsonValue] = [facts if agent is None else {**facts, "agent": agent} for agent in agents]
-        return input_fingerprint.input_fingerprints(variants, [path for path in paths if path != self.path])
+        return input_fingerprint.input_fingerprints(
+            variants,
+            [path for path in paths if path != self.path],
+            self.agents.bookkeeping(),
+        )
 
     def _inputs_unchanged(self, step: Step, inputs: StepInputs, launch: AgentLaunch) -> bool:
         """Tell whether an agent step's accepted output was made from the inputs it would run on now.

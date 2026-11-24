@@ -26,7 +26,9 @@ recovery are in `orchestrator/DESIGN.md`, section 6.3. An agent step planned aga
 cause, in the same dispatch or a later one, is recorded from its accepted output, and no agent
 starts, while the fingerprint of its inputs is the one recorded when that output was accepted
 (`orchestrator/core/input_fingerprint.py`); it re-runs only when an input changed, never because the plugin, an agent definition or a
-contract changed.
+contract changed. The pipeline's own records in the work directory (session marks and scratch,
+wait metrics, the run record, findings, runner tracebacks, fingerprint records and files still
+being written) are no input, and a file removed while the fingerprint is read is absent.
 
 ## Legend
 
@@ -642,6 +644,9 @@ Notes on the diagram:
 - The repositories' containers under Specs and Stories run at the same time, and so do their
   containers under Tasks, at most `ATW_ORCH_SESSIONS` at once (`journal_run.concurrent_containers`),
   because no repository's specs or Tasks wait on another's and run time is a goal of the pipeline.
+  A repository's failure costs only the Epic's dispatch: it never requests the supervisor's
+  run-wide stop, the other repositories' containers run to their end, and the Epic hands back the
+  repository's own failure ahead of any interruption that followed it.
 - Task decomposition is drawn in section 8.
 - One Spec and one Story per repository, and Tasks under each Story, are stated by
   [requirements/pipelines.md](../requirements/pipelines.md) and the vault's `docs/sdlc/sdlc.md`.

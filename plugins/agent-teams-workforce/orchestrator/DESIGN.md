@@ -1,6 +1,6 @@
 # DESIGN: the Python orchestrator for the Epic pipeline
 
-Failure handling: bounded transient retries and quota pauses remain. No check stops an item: after its bounded correction attempts the item continues and the problem is recorded as a finding (`core/findings.py`); only a Task's failing tests fail it. An item failure is recorded, and the driver backs the item off and dispatches it again, resuming at the failed step with every earlier output kept; other eligible items continue. Setup, code, schema, and runtime type defects stop new dispatch, preserve the original diagnostic, and let current paid steps finish. Named within-step corrective passes remain bounded content work; failed runs do not dispatch repair or diagnosis agents.
+Failure handling: bounded transient retries and quota pauses remain. No check stops an item: after its bounded correction attempts the item continues and the problem is recorded as a finding (`core/findings.py`); only a Task's failing tests fail it. An item failure is recorded, and the driver backs the item off and dispatches it again, resuming at the failed step with every earlier output kept; other eligible items continue. Setup, code, schema, and runtime type defects preserve the original diagnostic and cost only their item; the plugin never requests the run-wide stop (`ATW_STOP_FILE`), and the driver stops a lane only for a known lane-wide cause (the flow fails to load, `bd` cannot be executed, git or GitHub authentication fails, a required tool is missing). Named within-step corrective passes remain bounded content work; failed runs do not dispatch repair or diagnosis agents.
 
 This document describes how the Epic (elaboration) pipeline runs as a Python orchestrator: where
 the code lives, how a step is declared and run, where a run begins, how agent sessions are started
@@ -950,17 +950,20 @@ vocabulary in `core/handback_contract.py`). It is decided from the exception cha
 | Classification | When | What the driver does |
 |---|---|---|
 | `interrupted` | the stop file was seen between sessions (`PipelineStoppedError`, stage `shutdown`), a session cleanup error caused by a `BrokenPipeError` (the supervisor stopped before the session's end reached it, stage `shutdown`), or a signal or keyboard interrupt (stage `interrupted`); the stage that was running is kept as `interruptedStage` | never an item failure, never counted toward repeated failures |
-| `pipeline-code-defect` | a session cleanup error not caused by a `BrokenPipeError`, a runtime type check failure, a handback validation failure, a `PipelineDefectError`; a `TypeError`, `ValueError`, `AttributeError`, `KeyError`, `NameError` or `IndexError` in the chain; an `ImportError` after an agent session started; any failure that is no `StepError` and fits no other row. An exception raised `from None` ends the chain: the content failure a step found in a file or an agent's output and stated in its evidence is raised that way, so it is an `item` failure | stops new dispatch |
-| `setup` | a failure before the flow started, a session setup error, or a `StepError` at stage `input`; an `ImportError` before any agent session started | stops new dispatch |
+| `pipeline-code-defect` | a session cleanup error not caused by a `BrokenPipeError`, a runtime type check failure, a handback validation failure, a `PipelineDefectError`; a `TypeError`, `ValueError`, `AttributeError`, `KeyError`, `NameError` or `IndexError` in the chain; an `ImportError` after an agent session started; any failure that is no `StepError` and fits no other row. An exception raised `from None` ends the chain: the content failure a step found in a file or an agent's output and stated in its evidence is raised that way, so it is an `item` failure | recorded for the item; stops its lane only for a known lane-wide cause |
+| `setup` | a failure before the flow started, a session setup error, or a `StepError` at stage `input`; an `ImportError` before any agent session started | recorded for the item; stops its lane only for a known lane-wide cause |
 | `item` | a retry allowance used up; any other `StepError` whose cause is not transient | recorded for the item; other items continue |
 | `transient` | a cause among `quota`, `api`, `bd-timeout`, `contention`, `timeout`, `tool-timeout`, `network`, or a timeout or connection error in the chain, with retries left to the driver | pauses or backs off, then dispatches again |
 
 The rows are tested in the order `pipeline-code-defect` (the first four conditions), `setup`,
 `pipeline-code-defect` (the named exception types), `item` (retries used up), `transient`, `item`.
 
-A fatal classification (`setup`, `pipeline-code-defect`) also touches the stop file
-`$ATW_STOP_FILE` when the driver set it, so no further agent step starts while the paid sessions
-that are running finish.
+No classification touches the stop file `$ATW_STOP_FILE`: it is the supervisor's run-wide stop,
+and a failure of one item never stops another item's work. The driver decides what a failure
+stops from the handback: its lane for a known lane-wide cause (the flow fails to load, `bd` cannot
+be executed, git or GitHub authentication fails, a required tool is missing), otherwise only its
+item. Of concurrent jobs of one item (`elaboration_support.parallel`), a job's own failure is
+handed back ahead of an interruption, so the real cause reaches the ledger.
 
 ## 7. Concurrency (S02 item 7)
 

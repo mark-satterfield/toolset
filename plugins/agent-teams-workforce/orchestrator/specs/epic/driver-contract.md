@@ -1,6 +1,6 @@
 # Driver contract for the Epic pipeline (elaboration lane)
 
-Failure handling: bounded transient retries and quota pauses remain. Setup, code, schema, and runtime type defects stop new dispatch, preserve the original diagnostic, and let current paid steps finish. Failed runs do not dispatch repair or diagnosis agents.
+Failure handling: bounded transient retries and quota pauses remain. Setup, code, schema, and runtime type defects preserve the original diagnostic and cost only their item; the plugin never requests the run-wide stop (`ATW_STOP_FILE`), and the driver stops a lane only for a known lane-wide cause (the flow fails to load, `bd` cannot be executed, git or GitHub authentication fails, a required tool is missing). Failed runs do not dispatch repair or diagnosis agents.
 
 ## Rules the plugin and the driver hold alike
 
@@ -182,7 +182,7 @@ Readers: `attempts.py` (turns a handback into an `Outcome`), `failurecause.py`, 
 |---|---|
 | success flag | completed vs failed routing (`AttemptRunner._resolved`); quota clear, only for a dispatch started after the hold's latest trip; the cost record's completion |
 | stage | a stage in `STOP_STAGES` -> halted; `requires-human-action` (from an older plugin) -> an ordinary counted failure; `refusal.STAGE` with a refusal -> refusal; `handbackstages.QUOTA_STAGE` -> pause; the environment stages in `handbackstages.ENVIRONMENT_STAGES` -> environment failure origin; otherwise the fallback failure stage |
-| `Failure` | the structured cause (`failurecause.stated_cause`): a cause in `RETRYABLE_CAUSES` backs off and retries, `OTHER_CAUSE` records the failure with its repository evidence; the classification decides item failure versus fatal stop (`FATAL_CLASSES`) |
+| `Failure` | the structured cause (`failurecause.stated_cause`): a cause in `RETRYABLE_CAUSES` backs off and retries, `OTHER_CAUSE` records the failure with its repository evidence; the driver decides what the failure stops: its lane for a known lane-wide cause, otherwise only its item; a fatal classification (`FATAL_CLASSES`) is never restated as a shutdown or an account-wall pause |
 | failure origin | environment vs work (`ledgerevents.FailureOrigin`), recorded on the handback event; gates quota clearing, with the dispatch's start after the hold's latest trip |
 | headline | Outcome headline; quota/API pause detection (`breaker.pause_of`: Fable wall mark, usage-limit text and reset time); the human need when no action is named |
 | `Refusal` | read by `refusal.code_of`: a code in `refusal.WAIT_CODES` -> wait, hold until the Epic's tracker facts change; a code in `refusal.NOTHING_TO_DO_CODES` -> skipped until the Epic's tracker facts change, not counted as a failure and with no notice |
@@ -378,7 +378,7 @@ freshness check.
   driver records each distinct one once per Epic and agent as a ledger event of type
   `tooling_recommendation`, never as a human action, never in the owner inbox, and never in
   failure counting. Every other failure carries its cause and its classification; ordinary item
-  failures are recorded and fatal defects stop new dispatch.
+  failures are recorded, and a failure stops its lane only for a known lane-wide cause.
 - **7.9 at the build boundary.** A Task elaboration left unbuildable (not written by
   elaboration, no parent Story, or a Story naming no usable repository: none recorded, not on
   disk, or one `polyrepo create` left before its first commit), whether selection finds it or
