@@ -34,6 +34,7 @@ type FindingKind = Literal[
     "deploy-stopped",
     "commit-hook-rejected",
     "dependency-cycle",
+    "spend-without-progress",
 ]
 """What kind of problem a finding records."""
 
