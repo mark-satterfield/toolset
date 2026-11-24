@@ -1,9 +1,10 @@
 """Append missing producer Tasks through the existing decomposer, writer and Task scoring.
 
 Producer work that cannot be authored (no open producer Story, a Story whose specs or Tasks are not
-found, or an authoring result that would change existing Tasks) is recorded as a
-``producer-missing`` finding (``core.findings``) and the consumer's build continues against its
-specified contract (:func:`continuation`); it never fails the Task.
+found, or an authoring result that adds nothing or would change existing Tasks) changes nothing the
+failing tests depend on: it is recorded as a ``producer-missing`` finding (``core.findings``) and
+the failure goes to the implementers with the diagnosis (``build_prerequisite_round.hand_off``),
+without rerunning the suite.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from orchestrator.core import step_journal
 from orchestrator.core.io import JsonValue, json_object
 from orchestrator.core.journal_steps import Completion, StepGroup, StepRun, value_artifact
 from orchestrator.core.step_findings import record_for_run
+from orchestrator.flows.build_prerequisite_round import diagnosis_fingerprint, hand_off
 from orchestrator.flows.build_sessions import OutputContract, latest, reasoned
 from orchestrator.flows.build_state import ARTIFACT_CONTRACTS, artifact_document, artifact_file, new_step
 from orchestrator.flows.elaboration_files import (
@@ -44,8 +46,6 @@ ELABORATION_STAGE = "build:prerequisite-elaboration"
 """The gate that holds a consumer while its producer Story's Epic finishes elaboration."""
 ELABORATION_WAIT = "prerequisiteElaborationWait"
 """The journal value naming the consumer, its diagnosis and the Epic and Story it waits for."""
-BASELINE = "build:baseline"
-"""The continuation that resumes the baseline setup."""
 REQUIRED: tuple[str, ...] = (
     "span",
     "elements",
@@ -60,35 +60,15 @@ REQUIRED: tuple[str, ...] = (
 """The producer Story's files the decomposer and the writer are handed."""
 
 
-def continuation(again: str) -> Completion:
-    """Resume the consumer's verification where the prerequisite recovery began.
-
-    Returns:
-        The baseline setup again, or the original suite run and its assessment.
-
-    """
-    return Completion(
-        add=(
-            StepGroup((
-                new_step(
-                    BASELINE if again == BASELINE else "build:prerequisites-suite",
-                    "Resume the baseline setup" if again == BASELINE else "Run and reassess the original suite",
-                    {"again": again},
-                ),
-            )),
-        ),
-    )
-
-
 def _missing(run: StepRun, owner: str, detail: str, *evidence: str) -> Completion:
-    """Record producer work that cannot be authored as a finding, and continue the consumer's build.
+    """Record producer work that cannot be authored as a finding; the diagnosis changed nothing.
 
     Returns:
-        The continuation (:func:`continuation`).
+        The failure handed to the implementers (``build_prerequisite_round.hand_off``).
 
     """
-    record_for_run(run, owner, kind="producer-missing", detail=detail, evidence=evidence)
-    return continuation(check_type(run.params()["again"], str))
+    again: str = check_type(run.params()["again"], str)
+    return hand_off(run, again, (owner, "producer-missing", detail), evidence, diagnosis_fingerprint(run))
 
 
 def prepare(run: StepRun, diagnosis: dict[str, JsonValue]) -> Completion:
@@ -97,11 +77,11 @@ def prepare(run: StepRun, diagnosis: dict[str, JsonValue]) -> Completion:
     A producer Story whose Epic has not finished elaboration has no specs or Tasks yet; the
     consumer waits for that elaboration instead of failing. No open producer Story, a Story with
     no Epic, and a Story whose files are not found are recorded as ``producer-missing`` and the
-    consumer's build continues (:func:`_missing`).
+    failure goes to the implementers (:func:`_missing`).
 
     Returns:
         A completed source-context record followed by the existing decomposer, the wait for the
-        producer Story's Epic to finish elaboration, or the continuation of the consumer's build.
+        producer Story's Epic to finish elaboration, or the failure handed to the implementers.
 
     """
     graph: beadgraph.Graph = run.tools.portfolio_read(run.step["script"], beadgraph.load, control_repository())
@@ -121,10 +101,7 @@ def prepare(run: StepRun, diagnosis: dict[str, JsonValue]) -> Completion:
         return _missing(run, story.id, found, evidence)
     context: dict[str, JsonValue] = found
     return Completion(
-        artifacts=(
-            value_artifact("prerequisiteAuthoring", context),
-            value_artifact("prerequisiteFingerprint", check_type(run.params()["fingerprint"], str)),
-        ),
+        artifacts=(value_artifact("prerequisiteAuthoring", context),),
         add=(
             StepGroup((
                 new_step(
@@ -155,7 +132,7 @@ def _await_elaboration(run: StepRun, story: beadgraph.Bead, epic: beadgraph.Bead
         "elaboration": {"epic": epic.id, "story": story.id},
     }
     return Completion(
-        artifacts=(value_artifact(ELABORATION_WAIT, wait), value_artifact("prerequisiteFingerprint", fingerprint)),
+        artifacts=(value_artifact(ELABORATION_WAIT, wait),),
         add=(
             StepGroup((
                 new_step(
@@ -189,7 +166,7 @@ def elaborated(run: StepRun) -> Completion:
     """Diagnose again against the Tasks the producer Story's finished elaboration wrote.
 
     Returns:
-        A fresh diagnosis of the now-decomposed producer work within the correction allowance.
+        A fresh diagnosis of the now-decomposed producer work.
 
     """
     return Completion(
@@ -407,12 +384,13 @@ def authored(run: StepRun) -> Completion:
     """Persist new durable Task keys through normal idempotent writes and scoped scoring.
 
     An authoring result that adds nothing or changes existing Tasks is not written: it is recorded
-    as ``producer-missing`` and the consumer's build continues. New Tasks that normal scoring
-    cannot score are recorded the same way, and the diagnosis runs again.
+    as ``producer-missing`` and, since nothing changed, the failure goes to the implementers. New
+    Tasks that normal scoring cannot score are recorded the same way, and the diagnosis runs again
+    on the changed tracker.
 
     Returns:
-        The real authored ids and a bounded new diagnosis of the changed tracker facts, or the
-        continuation of the consumer's build.
+        The real authored ids and a new diagnosis of the changed tracker facts, or the failure
+        handed to the implementers.
 
     """
     context: dict[str, JsonValue] = json_object(latest(run, "prerequisiteAuthoring"))

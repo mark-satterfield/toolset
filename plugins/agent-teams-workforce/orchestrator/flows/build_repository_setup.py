@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from typeguard import check_type
 
 from orchestrator.core.handback_contract import OTHER_CAUSE
-from orchestrator.core.journal_steps import Completion, StepGroup, StepRun, value_artifact
+from orchestrator.core.journal_steps import Completion, StepGroup, StepRun
 from orchestrator.core.models import StepError
+from orchestrator.flows import build_prerequisite_round
 from orchestrator.flows.build_sessions import OutputContract, reasoned
 from orchestrator.flows.build_state import CONTRACTS, artifact_document, new_step
+
+if TYPE_CHECKING:
+    from finding_contract import FindingKind
 
 REPOSITORY_SETUP_WORK: Final = "repositorySetupWork"
 """One selected specialist's correction of the repository's declarations: the artifact that marks its step."""
@@ -27,18 +31,16 @@ RESCOPE_AND_BASELINE: Final = (*RESCOPE, "build:execution-policy", BASELINE)
 the baseline."""
 
 
-def start(again: str, fingerprint: str) -> Completion:
+def start(again: str) -> Completion:
     """Begin a repository-setup correction for a diagnosis routed ``repository``.
 
-    The diagnosis fingerprint is recorded, so the bound on distinct prerequisite diagnoses also bounds these
-    corrections.
+    The diagnosis that routes here records its own inputs fingerprint.
 
     Returns:
-        The fingerprint and the implementation lead's selection step.
+        The implementation lead's selection step.
 
     """
     return Completion(
-        artifacts=(value_artifact("prerequisiteFingerprint", fingerprint),),
         add=(
             StepGroup((
                 new_step(
@@ -129,21 +131,27 @@ def _done(run: StepRun) -> Completion:
     A failure found at the baseline reassesses the regression scope, so each run's setup installs the
     now-declared dependencies, re-derives the execution policy bound to that scope and reruns the baseline.
     Undeclared packages found by scope validation reassess the scope, whose policy and baseline steps still
-    follow. A failure found by a suite judgment reruns the suite and reassesses it.
+    follow. A failure found by a suite judgment reruns the suite and reassesses it, when the correction
+    changed the suite's inputs; a correction that changed nothing hands the failure to the implementers.
 
     Returns:
-        The resuming steps.
+        The resuming steps, or the failure handed to the implementers.
 
     """
     again: str = check_type(run.params()["again"], str)
     purpose: str = "Resume the build on the corrected repository declarations"
     resumed: dict[str, tuple[str, ...]] = {BASELINE: RESCOPE_AND_BASELINE, VALIDATE: RESCOPE}
-    steps = (
-        tuple(new_step(key, purpose) for key in resumed[again])
-        if again in resumed
-        else (new_step("build:prerequisites-suite", "Run and reassess the original suite", {"again": again}),)
-    )
-    return Completion(add=(StepGroup(steps),))
+    if again in resumed:
+        return Completion(add=(StepGroup(tuple(new_step(key, purpose) for key in resumed[again])),))
+    diagnosed: str = build_prerequisite_round.diagnosis_fingerprint(run)
+    if build_prerequisite_round.inputs_fingerprint(run, again)[0] == diagnosed:
+        finding: tuple[str, FindingKind, str] = (
+            build_prerequisite_round.story_of(run),
+            "prerequisite-carried",
+            "the repository-setup correction changed no file",
+        )
+        return build_prerequisite_round.hand_off(run, again, finding, (), diagnosed)
+    return build_prerequisite_round.continuation(run, again)
 
 
 HANDLERS: Final = {

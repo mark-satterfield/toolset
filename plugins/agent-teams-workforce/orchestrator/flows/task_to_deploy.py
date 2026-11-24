@@ -275,12 +275,12 @@ def _setup_suite(run: StepRun, approved: Path) -> Completion | None:
             "approvedPlan": str(approved),
             "result": document,
         }
-        if build_prerequisites.exhausted(run, observation):
+        if build_prerequisites.exhausted(run, "build:baseline"):
             record_for_run(
                 run,
                 check_type(json_object(_object(run, "bead")["story"])["id"], str),
                 kind="prerequisite-carried",
-                detail="the regression setup failed and its diagnoses are spent; the baseline is measured without it",
+                detail="the regression setup fails on inputs already diagnosed; the baseline is measured without it",
                 evidence=(str(output),),
             )
             return None

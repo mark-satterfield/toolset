@@ -273,9 +273,25 @@ named even when waiting for it would close a cycle, so the cycle check below dec
 The build validates those identities and adds only missing consumer blockers through the normal
 cycle-checked writer; normal elaboration protections for already started Tasks remain intact. A
 diagnosis the tracker contradicts adds no wait: it is a `prerequisite-carried` finding for the
-Task's Story and the consumer's verification continues. A missing producer or missing authoring
-context is a `producer-missing` finding, never an owner SSM task or permission to create shared
-resources as test fixtures.
+Task's Story. A missing producer or missing authoring context is a `producer-missing` finding,
+never an owner SSM task or permission to create shared resources as test fixtures.
+
+The suite runs again after a diagnosis only when the diagnosis changed something the failing
+tests depend on: the repository's declarations corrected, a prerequisite Task or Story finished,
+producer work authored, or the diagnosed environment cause observed cleared. A diagnosis that
+changes nothing (a contradicted or refused producer wait, a completion cycle, missing work no open
+Story can author, authoring that adds nothing, an environment still unready, a repository
+correction that changed no file) records its finding and hands the failure once to the
+implementers with the diagnosis as feedback: the implementers already selected, or the
+implementation lead's selection; in Red, before any implementer is selected, the build continues
+to its own selection; at the baseline, the baseline is measured without the failing setup.
+`build:prerequisites-diagnosed` records each applied diagnosis's inputs fingerprint, the hash of
+the phase, the work tree digest and the tracker's Task and Story state, never the judgment's
+wording, as `prerequisiteFingerprint`; a hand-off records it as `prerequisiteHandoff`. A failure
+on inputs this dispatch already diagnosed is not diagnosed again: it is handed off, and once the
+implementers had it, the same failure fails the Task for this dispatch. No round count decides
+this. A new round is placed beside the round that started it, as the last child of the nearest
+ancestor outside every prerequisite round, so the journal never grows deeper round by round.
 
 A failure whose cause is the Task repository's own declarations (a dependency manifest, lock file,
 override, peer-dependency conflict, or a test configuration naming a package no manifest declares)
@@ -285,15 +301,13 @@ each corrects only those declarations in a `build:repository-setup-work` step, a
 `build:repository-setup-done` resumes the build. A failure found at the
 baseline then reassesses, reviews and validates the regression scope, so each run's setup installs
 the declared dependencies with its locked install, re-derives the execution policy and reruns the
-baseline; a failure a suite judgment routed reruns and reassesses the suite. An empty selection
-stops the Task. `environment` remains for a cause outside the repository (a missing tool or
-runtime, credentials, network or service availability); fresh readiness evidence that shows it
-unready is a `prerequisite-carried` finding, and the suite runs again all the same. A regression
-setup failure at the baseline whose diagnoses this dispatch spent is a `prerequisite-carried`
-finding, and the baseline is measured without it. A failing suite whose diagnoses this dispatch
-spent is a `prerequisite-carried` finding too, and goes with the latest diagnosis to the
-implementers already selected, or to the implementation lead's selection; in Red, before any
-implementer is selected, the build continues to its own selection.
+baseline; a failure a suite judgment routed reruns and reassesses the suite when the correction
+changed the work tree, and is handed to the implementers when it changed no file. An empty
+selection stops the Task. `environment` remains for a cause outside the repository (a missing tool
+or runtime, credentials, network or service availability); fresh readiness evidence that shows it
+unready is a `prerequisite-carried` finding and the failure is handed to the implementers. A
+regression setup failure at the baseline on inputs this dispatch already diagnosed is a
+`prerequisite-carried` finding, and the baseline is measured without it.
 
 A `missing-work` diagnosis whose producer Story's Epic has not finished elaboration is a wait, not a
 failure: the Story has no specs or Tasks yet. `build:prerequisite-elaboration` remains planned until
@@ -303,7 +317,7 @@ never waits on a build, so this wait closes no completion cycle. Once the Epic i
 build diagnoses again against the Tasks it wrote. The producer Story's files are taken from the
 done steps of its Story and Epic journals, and, for any they do not record, from the Epic's work
 folder where its elaboration wrote them; a Story whose files are found nowhere is a
-`producer-missing` finding and the consumer's verification continues.
+`producer-missing` finding and the failure is handed to the implementers.
 
 `build:prerequisites-ready` remains planned while producer stages are pending. Its dispatch
 returns the typed `waitingForPrerequisites` handback without a failure and releases its slot.
@@ -316,8 +330,8 @@ alone is insufficient. Existing `deployed` declarations retain their literal res
 meaning; active package dependencies need evidence-based reassessment to `published`, never
 a blanket reinterpretation or rewriting of completed journals. After progression,
 a read-only `test-environment-provisioner` observation precedes the exact original suite and a
-fresh independent assessment in the original phase. Distinct failure/tree fingerprints and the
-build correction allowance of the current dispatch bound diagnosis; accepted history is retained.
+fresh independent assessment in the original phase. The inputs fingerprints of the current
+dispatch bound diagnosis; accepted history is retained.
 
 An empty implementer selection is reassessed only after its recorded test/tree fingerprint
 changes. One appended whole-suite run and independent code review then use the normal selector.
@@ -333,8 +347,8 @@ producer Story completion and actual host repository-holder dependencies are che
 for cycles; unschedulable waits are explicit workflow gaps rather than indefinite holds.
 A cycle that the diagnosed Task's proposed wait closes is a `completion-cycle` finding, and a
 proposed producer row without an absolute existing evidence artifact a `prerequisite-carried`
-finding, each for the Task's Story: the wait is not added and the consumer's verification
-continues.
+finding, each for the Task's Story: the wait is not added and the failure is handed to the
+implementers.
 
 When missing producer work has an actual open Story and completed saved authoring context,
 the normal task decomposer appends only work that scope/spec already authorizes. Existing Task
@@ -342,7 +356,7 @@ and score objects remain exact, normal append-only durable-key writes make uncer
 idempotent, and only new Task ids receive normal Task scoring. No architecture or Epic assessment
 runs. The changed tracker facts receive a bounded new diagnosis before consumer edges are added.
 An authoring result that adds nothing or would change existing Tasks or scores is not written; it
-is a `producer-missing` finding and the consumer's verification continues.
+is a `producer-missing` finding and the failure is handed to the implementers.
 
 Build artifact readers expose recorded facts from completed steps and running structural
 ancestors only, through one accepted view per journal revision and step

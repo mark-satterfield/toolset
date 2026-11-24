@@ -574,12 +574,12 @@ def _declare_packages(run: StepRun, output: Path, document: dict[str, JsonValue]
             "producers": [],
         },
     )
-    started: Completion = build_repository_setup.start(build_repository_setup.VALIDATE, fingerprint)
+    started: Completion = build_repository_setup.start(build_repository_setup.VALIDATE)
     return Completion(
         artifacts=(
             file_artifact("regressionCorrection", output),
             file_artifact("prerequisiteDiagnosis", diagnosis),
-            *started.artifacts,
+            value_artifact(PREREQUISITE_FINGERPRINT, fingerprint),
         ),
         add=started.add,
     )
