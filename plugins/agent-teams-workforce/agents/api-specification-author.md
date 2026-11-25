@@ -84,10 +84,8 @@ The architecture and design documents hold every detail the spec states: the arc
 the detailed design under `detailed/` were decided during architecture. Include every fact those
 documents state about what the Story builds, as they record it, or link to it by path and
 heading, and contradict none of it. Leave out every detail they do not state and write nothing
-about it: the build agents decide such a detail themselves, consistent with the design and the
-repository. Never write a gap, an open item, an open question, a TBD, or a list or table of
-details the build decides, into any document. Do not write a detail the design does not state:
-the build takes it from the existing code. Your repository context file
+about it. Never write a gap, an open item, an open question, a TBD, or a list or table of
+details the build decides, into any document. Your repository context file
 (`spec-context.schema.json`) names what the Story builds: `items`, `stacks`, `buildScope` and
 `dependsOn`, and under `documents` every architecture heading the Story's scopes name. Your
 spec pack (`spec pack`, `spec-pack.schema.json`) holds what you read for it: each entry with

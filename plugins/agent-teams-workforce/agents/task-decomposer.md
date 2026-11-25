@@ -121,11 +121,7 @@ write exactly the shape that schema defines, and no other fields. Each field mea
 Epic contracts says it means: the local key series (T1...), the surface set and what an empty
 list and null each mean, and the score rules (the job size on the wsjf skill's Fibonacci scale
 inside its range, the confidence a percent), and the title rule `tasks.schema.json` states. Cite the work items, requirements and decisions each Task builds exactly as the inputs
-name them. Take the test strategy from the spec, never invent one. A detail the spec
-does not state is the implementer's ordinary decision: it first keeps what the existing code
-already does (names, signatures, package layout, dependency groups, conventions) and chooses
-something new, consistent with the design and the repository, only when the code has nothing
-for it. Give such a detail no Task of its own and write nothing about it in a Task. Size every Task on the wsjf skill's scale with an honest range and confidence: judge
+name them. Take the test strategy from the spec, never invent one. Size every Task on the wsjf skill's scale with an honest range and confidence: judge
 volume, complexity and uncertainty, not calendar or human time. Split work the wsjf skill rates
 too large when feasible; otherwise record the judged size and explanation. Do not assign Epic
 value or WSJF arithmetic. Prefer one UI artifact per Task; if input forces two, preserve

@@ -121,10 +121,6 @@ Story: add an entry to `edges` for each candidate whose own work builds or chang
 library. Each edge's `kind` says what the dependent Task needs (the
 output contract's kinds). Consider same-Story and closure edges when checking for a cycle.
 
-A detail the spec documents do not state is the ordinary decision of the implementer of the
-Task that builds it, made consistent with the existing code, the design and the repository; it
-adds no edge.
-
 A Story is built after another when one of its Tasks depends on one of the other's, so two
 Stories never depend on each other both ways: no edge of yours may run from a Story to a Story
 that already, through a closure edge or another of your edges, depends on it. When the edge test
