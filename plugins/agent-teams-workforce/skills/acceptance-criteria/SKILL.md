@@ -103,7 +103,7 @@ person does, but an easy automated check proves exactly the same fact. Rewrite e
 condition is not build work, and neither is a check that could only be automated with special
 infrastructure, emulation or an elaborate harness. Write no item for it: it is left out of the
 criteria document. Do not replace it with an automated stand-in that proves something weaker, and
-do not record it as a design gap, a blocker or a finding. Such checks include:
+do not record it as a blocker or a finding. Such checks include:
 
 - sign-off, approval, or recording a result, an outcome or a review;
 - review of tone or copy that is a matter of judgment;

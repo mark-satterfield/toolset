@@ -6,10 +6,10 @@ write a Task that owns one of those entries after that, or a build can start and
 A step that plans or writes from the items then works on a stale snapshot, so it reads beads
 again, and on any change raises ``OwnershipChangedError`` naming the span step: the span alone
 runs again, keeping the repository containers it planned, and sets back only the containers
-whose placed items changed (``repo_scoping.span``). The same holds when the architect's result came to name other
-elements for the Stories than the span read (an answer to a design gap can add one):
-``ScopeChangedError``. A Task bead write makes the check and the write under one lock
-(``tool_locks.ownership_lock``), so the second of two racing Epics sees the first one's claim.
+whose placed items changed (``repo_scoping.span``). The same holds when the architect's result
+came to name other elements for the Stories than the span read: ``ScopeChangedError``. A Task bead
+write makes the check and the write under one lock (``tool_locks.ownership_lock``), so the second
+of two racing Epics sees the first one's claim.
 
 Two Epics can keep racing. Once a dispatch has raised ``OWNERSHIP_REPLANS`` such changes for one
 span step, a further change is recorded as an ``ownership-race`` finding for the Epic and the step
@@ -125,14 +125,14 @@ def refuse_ownership_drift(run: StepRun, stage: str) -> None:
     tasks: list[TaskBead] = run.tools.portfolio_read(stage, tasks_of, graph)
     drifted: list[str] = buildowner.ownership_drift(list(items.values()), buildowner.builders(tasks), str(run.bead))
     if drifted:
-        _race(run, OwnershipChangedError(stage, span_writer(run), tuple(drifted), within=None))
+        _race(run, OwnershipChangedError(stage, span_writer(run), tuple(drifted)))
 
 
 def refuse_scope_drift(run: StepRun, stage: str) -> None:
     """Check the elements the span step read against the architect's result as it stands.
 
-    An answer to a design gap can add an element the Epic builds, or drop one; the span then no
-    longer holds what the Stories build. Only entries a Story can build count
+    A result changed after the span step ran can add an element the Epic builds, or drop one; the
+    span then no longer holds what the Stories build. Only entries a Story can build count
     (``repo_scoping.can_build``): the span records the others as findings and holds no item of them.
 
     A result whose ``addedOrChangedElements`` and ``unchangedWorkElements`` name other entries
@@ -162,7 +162,7 @@ def refuse_scope_drift(run: StepRun, stage: str) -> None:
             for entry in sorted(spanned - stated)
         ),
     )
-    _race(run, ScopeChangedError(stage, span_writer(run), evidence, within=None))
+    _race(run, ScopeChangedError(stage, span_writer(run), evidence))
 
 
 @contextmanager

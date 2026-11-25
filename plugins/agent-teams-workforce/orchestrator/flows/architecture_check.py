@@ -6,17 +6,14 @@ the corrected matrix gives it (``matrixtraverse.architecture_review_scope``, the
 approves), and reads from the matrix the documents the Epic reaches that are not effective. It
 also holds the architect's filled element checklist (``elementValues``) to the values each element
 the Epic adds or changes must state (``matrixchecklist``): a value with no entry, an empty entry,
-or a home heading that does not exist or does not state it is a mechanical defect too, and once
-the corrections are spent the values left are carried to the spec stage as design gaps
-(``design_gaps.carry_unfilled``) instead of failing the step. It then plans what follows by rule:
-open design gaps the spec stage filed go to the architect's step that answers them
-(``design_gaps``), a mechanical defect goes back to the architect, a matter the architect could
-not settle goes to the lead, and otherwise the TRD write from the architect's decisions when its
-changes are not yet written (``trd_steps``) and then the promotion step follow. Nothing reviews
-the architect's work: the architect reviews and approves its own architecture against the
-criteria, and the review log is the record of that review. The step judges nothing and records
-nothing in the matrix: every branch is a rule over the matrix, the criteria file, the architect's
-result and the review log.
+or a home heading that does not exist or does not state it is a mechanical defect too, while
+corrections remain. It then plans what follows by rule: a mechanical defect goes back to the
+architect, a matter the architect could not settle goes to the lead, and otherwise the TRD write
+from the architect's decisions when its changes are not yet written (``trd_steps``) and then the
+promotion step follow. Nothing reviews the architect's work: the architect reviews and approves
+its own architecture against the criteria, and the review log is the record of that review. The
+step judges nothing and records nothing in the matrix: every branch is a rule over the matrix,
+the criteria file, the architect's result and the review log.
 """
 
 from __future__ import annotations
@@ -76,7 +73,6 @@ from orchestrator.core.journal_steps import (
     file_artifact,
 )
 from orchestrator.core.step_findings import record_for_run
-from orchestrator.flows import design_gaps
 from orchestrator.flows.architecture_files import (
     ARCHITECT,
     ARCHITECTURE_FOLDER,
@@ -121,7 +117,7 @@ MAX_CORRECTIONS: Final = 3
 
 The step never fails on what it finds: once the corrections are spent, each problem left is
 recorded as a finding for this Epic and carried (:func:`_carry`), and an element value left
-unfilled is carried to the spec stage (:func:`_checklist`)."""
+unfilled is no longer a problem of the check (:func:`_checklist`)."""
 ARTIFACT_CHECKLIST: Final = "element checklist"
 """The artifact of a check: the values the elements must state and those left unfilled."""
 NO_VERDICT_KINDS: Final[frozenset[EntryKind]] = frozenset({KIND_EPIC, KIND_REQUIREMENT})
@@ -433,9 +429,8 @@ def checklist_applies(run: StepRun) -> bool:
     """Tell whether the architecture check holds the architect's result to the element checklist.
 
     A journal whose architecture was promoted before any check listed the element checklist was
-    approved without it, and is never sent back through it: a later check, such as the one after
-    the answer to the spec stage's design gaps, does not hold it to the checklist. Every other
-    journal is held to it.
+    approved without it, and is never sent back through it: a later check does not hold it to the
+    checklist. Every other journal is held to it.
 
     Returns:
         False when the journal holds a done promotion and no done check that recorded the
@@ -452,7 +447,6 @@ def checklist_applies(run: StepRun) -> bool:
 
 
 def _element_checklist(
-    work: Path,
     result: ArchitectureResult,
     arch: Path,
 ) -> tuple[list[ExpectedValue], list[UnfilledValue]]:
@@ -461,7 +455,7 @@ def _element_checklist(
     Returns:
         The expected values (``matrixchecklist.expected_values``) of the result's
         ``addedOrChangedElements``, and each one ``matrixchecklist.value_problems`` finds in its
-        ``elementValues``, leaving out those already carried to the spec stage.
+        ``elementValues``.
 
     """
     expected: list[ExpectedValue] = expected_values(
@@ -470,7 +464,7 @@ def _element_checklist(
         load_checklist(),
     )[0]
     given: list[ElementValue] = result.get("elementValues", [])
-    return expected, value_problems(expected, given, arch, design_gaps.carried_values(work))
+    return expected, value_problems(expected, given, arch)
 
 
 def _checklist(
@@ -478,38 +472,37 @@ def _checklist(
     result: ArchitectureResult,
     checked: CheckResult,
     folder: Path,
-) -> tuple[CheckResult, list[UnfilledValue], list[Artifact]]:
+) -> tuple[CheckResult, list[Artifact]]:
     """Hold the architect's result to the element checklist, when the journal is held to it.
 
     Each value left unfilled is a problem of the check while corrections remain; once
-    :data:`MAX_CORRECTIONS` corrections are spent it is carried instead, and is no problem.
+    :data:`MAX_CORRECTIONS` corrections are spent it is no problem.
 
     Returns:
-        The check result with each unfilled value's problem added while corrections remain; the
-        values to carry to the spec stage; and the checklist file as the artifact to record, none
-        when the journal is not held to the checklist (:func:`checklist_applies`).
+        The check result with each unfilled value's problem added while corrections remain, and
+        the checklist file as the artifact to record, none when the journal is not held to the
+        checklist (:func:`checklist_applies`).
 
     """
     if not checklist_applies(run):
-        return checked, [], []
+        return checked, []
     context: ArchitectureContext = read_context(run)
     expected: list[ExpectedValue]
     unfilled: list[UnfilledValue]
     expected, unfilled = run.tools.portfolio(
         CHECK,
         _element_checklist,
-        run.context.work,
         result,
         Path(context["architectureRoot"]),
     )
     spent: bool = checked["corrections"] >= MAX_CORRECTIONS
     path: Path = folder / "element-checklist.json"
-    write_json(path, {"expected": expected, "unfilled": unfilled, "carried": spent and bool(unfilled)})
+    write_json(path, {"expected": expected, "unfilled": unfilled})
     artifacts: list[Artifact] = [file_artifact(ARTIFACT_CHECKLIST, path)]
     if spent:
-        return checked, unfilled, artifacts
+        return checked, artifacts
     problems: list[str] = [*checked["problems"], *(sentence(value) for value in unfilled)]
-    return {**checked, "valid": not problems, "problems": problems}, [], artifacts
+    return {**checked, "valid": not problems, "problems": problems}, artifacts
 
 
 def _open_review(bead: str, added_or_changed: list[str]) -> tuple[ReviewScope, EpicView]:
@@ -536,8 +529,8 @@ def _promotion(run: StepRun, result: ArchitectureResult) -> Completion:
     """Plan the TRD write from the architect's decisions when it is due, then the promotion, after this check.
 
     The TRD write is planned unless the last TRD write of the journal is done and applied the
-    TRD changes and shared capabilities the result states now (``trd_steps.write_current``): an
-    answer to design gaps that changes no TRD requirement leaves the TRD as it was written.
+    TRD changes and shared capabilities the result states now (``trd_steps.write_current``): a
+    result that changes no TRD requirement leaves the TRD as it was written.
 
     Returns:
         The completion that plans the TRD write when due and the promotion, each handed this check step.
@@ -588,20 +581,6 @@ def _correction(run: StepRun, check: CheckResult) -> Completion:
     return Completion(add=(StepGroup((NewStep(plan), index_step(["correction"]), again)),))
 
 
-def _gap_answer(run: StepRun) -> Completion:
-    """Send the open design gaps the spec stage filed to the architect, and check again after its answer.
-
-    The architect's step is handed this check, so it sees any defect the check found with the gaps.
-
-    Returns:
-        The completion that plans ``design_gaps.gap_round``: the architect's step that answers the
-        gaps, one index step and one check step after this one.
-
-    """
-    plans: tuple[StepPlan, ...] = design_gaps.gap_round([run.step["id"]])
-    return Completion(add=(StepGroup(tuple(NewStep(plan) for plan in plans)),))
-
-
 def _review_files(folder: Path, scope: ReviewScope, unlinked: EpicView) -> list[Artifact]:
     """Write what the matrix returned for the review to the Epic's architecture work folder.
 
@@ -621,12 +600,11 @@ def _review_files(folder: Path, scope: ReviewScope, unlinked: EpicView) -> list[
 def check(run: StepRun) -> Completion:
     """Check what code can check, list what is in review, and plan what follows by rule.
 
-    Open design gaps the spec stage filed (``design_gaps.handed``) go to the architect first,
-    whatever the check found. A matrix problem of another Epic is recorded as a finding for that
+    A matrix problem of another Epic is recorded as a finding for that
     Epic and is never this Epic's problem. A defect is sent back to the architect at most
     :data:`MAX_CORRECTIONS` times; after that each one left is recorded as a finding for this Epic
     and the step continues as after a valid check (:func:`_carry`), and an element value left
-    unfilled is carried to the spec stage (:func:`_checklist`). The step never fails on what it
+    unfilled is no longer a problem (:func:`_checklist`). The step never fails on what it
     finds. Every file the step writes is in its own folder, named for the step, so a later check
     never overwrites what an earlier one recorded.
 
@@ -649,9 +627,8 @@ def check(run: StepRun) -> Completion:
         criteria,
         Path(context["reviewLogPath"]),
     )
-    carried: list[UnfilledValue]
     listed: list[Artifact]
-    checked, carried, listed = _checklist(run, result, checked, folder)
+    checked, listed = _checklist(run, result, checked, folder)
     check_path: Path = folder / "check.json"
     owner: str
     problem: str
@@ -661,11 +638,8 @@ def check(run: StepRun) -> Completion:
         checked = _carry(run, checked, check_path)
     write_json(check_path, checked)
     recorded: list[Artifact] = [file_artifact(ARTIFACT_CHECK, check_path), *listed]
-    if design_gaps.handed(run.context.work):
-        return Completion(artifacts=tuple(recorded), add=_gap_answer(run).add)
     if not checked["valid"]:
         return Completion(artifacts=tuple(recorded), add=_correction(run, checked).add)
-    design_gaps.carry_unfilled(run, carried)
     scope: ReviewScope
     unlinked: EpicView
     scope, unlinked = run.tools.portfolio(

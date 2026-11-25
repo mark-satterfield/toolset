@@ -347,15 +347,6 @@ class TrdChange(TypedDict):
     appliesTo: str
 
 
-class GapAnswer(TypedDict):
-    """Typed form of #/$defs/GapAnswer in architecture-result.schema.json."""
-
-    repository: str
-    gap: str
-    decision: str
-    facts: list[str]
-
-
 class ElementValue(TypedDict):
     """Typed form of #/$defs/ElementValue in architecture-result.schema.json."""
 
@@ -389,7 +380,6 @@ class ArchitectureResult(TypedDict):
     requests: list[AgentRequest]
     reach: list[ReachVerdict]
     excluded: list[Exclusion]
-    gapAnswers: NotRequired[list[GapAnswer]]
     elementValues: NotRequired[list[ElementValue]]
 
 

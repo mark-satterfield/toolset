@@ -198,7 +198,7 @@ contract and the plugin version are not inputs, so an accepted output is reused 
 version. A record written while the fingerprint still held the agent fingerprint is matched on the
 same inputs with each agent fingerprint a session mark of that agent and contract records
 (`AgentRunner.recorded_fingerprints`). Before a new session of an agent step
-starts, for whatever reason the step is planned again (set back by a stale input, a design gap,
+starts, for whatever reason the step is planned again (set back by a stale input,
 an ownership change, a retired plan, a re-run Epic, a failed step that was not a failure of this
 step's work, a supervisor restart or relaunch), the runner computes the fingerprint again; when it
 equals the recorded one, the output is the file recorded and it passes its check, the step is
@@ -217,42 +217,16 @@ read it runs again. Only when that correction fails is a writer that planned no 
 alone, to run again on its existing output (`step_journal.replan_step`); a writer that planned
 steps is never set back, and the reading step fails as an item failure that the driver backs off
 and dispatches again. A missing architecture pack is assembled in place for the step that reads it
-(`architecture_pack.pack_file`). The step after a repository's spec review raises the same
-error for an open design gap a spec document records (`design_gaps.hold_open`): it is
-`DesignGapError`, naming the repository's first spec step as the writer and the repository's
-container as its scope, so that repository alone is specified again. Once the containers end, the
-runner adds one gap round to the end of the Architecture container (the architect's step that
-answers every filed gap, an index and a check, which plans the document writes and the promotion,
-and the TRD write only when the architect's TRD changes changed) and plans the TRD confirmation
-again; no other repository, no impact analysis and no TRD write the answers do not need run
-again. The writer is set back however often it was set back in the dispatch, because the step
-bounds its rounds itself, row by row, and never fails the Epic on a gap: a row the architect
-answered that comes back, and every open row of a repository whose gaps went to the architect
-once (`design_gaps.MAX_ROUNDS`, one round), counted from every record of the rounds
-(`design_gaps.answers`), is carried to the build (`design_gaps.carry`): it moves to the
-document's `## Decided at build` table marked as kind C left open, is recorded in
-`<arch-work>/design-gaps/leftover/<slug>.json` for the Task dependency mapper, and a warning note
-names the pipeline defect ("design gaps after 1 round") with the Epic, the repository and the
-rows. Most kind C gaps are caught before any spec is written: the architecture check holds the
-architect's filled element checklist (`elementValues`, `scripts/portfolio/matrixchecklist.py`,
-from `skills/effective-architecture/element-checklist.json` and the criteria A15 to A20) to the
-values each element the Epic adds or changes must state, sends each one with no entry, an empty
-entry or a home heading that does not exist or does not state it back to the architect through
-the mechanical correction, and once those corrections are spent carries what is left to the spec
-stage (`design_gaps.carry_unfilled`, `<arch-work>/design-gaps/unfilled-values.json`, a warning
-note "element values left unfilled after the mechanical corrections of the architecture"); the
-step after the spec review writes each carried value of an element its Story builds as a kind C
-gap row (`design_gaps.add_unfilled`), which then takes the one gap round and is decided at build.
-A journal whose architecture was promoted before any check listed the checklist is never held
-to it (`architecture_check.checklist_applies`). A repository at the limit is never handed to
-the architect again (`design_gaps.handed`). Only kind C details are gaps: a spec author builds a
-name with the naming command (kind A) and records a detail local to the repository as decided at
-build (kind B), and neither blocks. An answer that changes the elements the Stories
-build sends the span back instead (`ScopeChangedError`, from the repository's context step). The repositories' containers
-running beside the one that found a gap each go on to their own gap check before they stop, and
-so do their sibling containers beyond the session cap (`JournalRunner._run_to_gap_checks`), so
-every repository's gaps reach the architect in one round. When the same writer of any
-other stale file is named twice in one dispatch, the step fails; when that writer is a script step, its code wrote the file to a
+(`architecture_pack.pack_file`). The architecture check holds the architect's filled element
+checklist (`elementValues`, `scripts/portfolio/matrixchecklist.py`, from
+`skills/effective-architecture/element-checklist.json` and the criteria A15 to A20) to the values
+each element the Epic adds or changes must state, and sends each one with no entry, an empty entry
+or a home heading that does not exist or does not state it back to the architect through the
+mechanical correction, while corrections remain. A journal whose architecture was promoted before
+any check listed the checklist is never held to it (`architecture_check.checklist_applies`). A spec
+includes every fact the architecture and design state and leaves out what they do not, writing
+nothing about it. When the same writer of a
+stale file is named twice in one dispatch, the step fails; when that writer is a script step, its code wrote the file to a
 contract other than its readers', and the failure is `PipelineDefectError`. A change of the Epic
 that owns an entry, or of the elements the Stories build (`OwnershipChangedError`,
 `ScopeChangedError`), names no file: the span step alone runs again (`step_journal.reset_step`),

@@ -23,7 +23,7 @@ from .handback_contract import OTHER_CAUSE, Session
 from .io import JsonValue, write_json
 
 # isort: split
-from step_journal_contract import STEP_ID_PATTERN, StepId, StepPlan
+from step_journal_contract import STEP_ID_PATTERN, StepId
 
 type ValidationResult = dict[str, JsonValue] | tuple[list[str], list[str]] | None
 type OutputValidator = Callable[[Path], ValidationResult]
@@ -81,8 +81,8 @@ class StaleInputError(StepError):
     The contract changed after the file was written. When the error names the file (``stale``),
     the errors the contract found (``errors``) and its check (``check``), and ``writer`` is an
     agent step, the journal runner has the writer's agent correct that file in place to the
-    current contract, and nothing is set back. Otherwise, with ``within``, the steps after the
-    writer inside that step are set back: the steps that read the file are all inside it.
+    current contract, and nothing is set back. Otherwise the writer alone is set back, when it
+    planned no steps.
     """
 
     def __init__(  # ruff: ignore[too-many-arguments] - The stale file, its errors and its check go with the writer.
@@ -90,52 +90,17 @@ class StaleInputError(StepError):
         stage: str,
         writer: StepId,
         evidence: tuple[str, ...] = (),
-        within: StepId | None = None,
         *,
         stale: Path | None = None,
         errors: Path | None = None,
         check: OutputValidator | None = None,
     ) -> None:
-        """Attach the stage, the cause ``other``, the evidence, the step that wrote the file, its scope and the file."""
+        """Attach the stage, the cause ``other``, the evidence, the step that wrote the file and the file."""
         super().__init__(stage, OTHER_CAUSE, evidence)
         self.writer = writer
-        self.within = within
         self.stale = stale
         self.errors = errors
         self.check = check
-
-
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-class DesignGapError(StaleInputError):
-    """A repository's spec documents hold an open design gap, so its specs wait for the architect's answer.
-
-    ``writer`` is the repository's first spec step and ``within`` its container: only that
-    repository's spec steps are set back to planned. The runner adds the gap round once for every
-    repository that found a gap in the same round: ``plans``, the solutions architect's step that
-    answers the filed gaps with the index and the check after it, as the last steps of
-    ``container`` (the Architecture container), and plans each step of ``reconfirm`` (the TRD
-    confirmation) again, so the TRD is confirmed against the answered architecture. Nothing else is
-    set back. Unlike any other stale file, the runner sets the writer back however often it was set
-    back in this dispatch: the gaps are bounded where they are read (``design_gaps.hold_open``),
-    which carries what is left to the build instead of raising this error.
-    """
-
-    def __init__(  # ruff: ignore[too-many-arguments] - The parts of one gap round.
-        self,
-        stage: str,
-        writer: StepId,
-        evidence: tuple[str, ...],
-        within: StepId,
-        *,
-        container: StepId,
-        plans: tuple[StepPlan, ...],
-        reconfirm: tuple[StepId, ...],
-    ) -> None:
-        """Attach the repository's steps to set back, and the gap round the runner adds once."""
-        super().__init__(stage, writer, evidence, within)
-        self.container = container
-        self.plans = plans
-        self.reconfirm = reconfirm
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
@@ -158,7 +123,7 @@ OWNERSHIP_REPLANS: Final = 3
 class ScopeChangedError(OwnershipChangedError):
     """The elements the architect's result names for the Epic's Stories differ from those the span step read.
 
-    An answer to a design gap can add or remove an element the Epic builds. ``writer`` is the span
+    ``writer`` is the span
     step: run again alone, it reads the result as it stands and plans or sets back only the
     repository containers whose items changed.
     The journal runner treats it as an ownership change: the span step is planned again up to

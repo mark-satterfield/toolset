@@ -101,8 +101,7 @@ session, once, to correct.
 Your brief is to `agent-brief.schema.json`, and its label vocabulary says what each input is.
 You are handed `prd`, `trd`, `state`, `element checklist`, `step journal`, `context` and an `example` of each file
 you write; on the Analyze step `ui bundles` as well ("Screens and the CDS route"); on a Decide step the `answers digest` and each `answer`; on a correction `findings`,
-and, when the lead routed it, `answer` and `ruling`; on the step that answers the spec stage's
-open design gaps, `design gaps` and `findings`. `context` is to
+and, when the lead routed it, `answer` and `ruling`. `context` is to
 `architecture-context.schema.json`, which says what each path it names is for. The brief's
 output path is where you write the step's output.
 
@@ -620,9 +619,7 @@ each filled value its home does not state yet. An entry for a value the element 
 (for example a read-only function has no idempotency key) sets `applies` to false and gives the
 reason in `value`. The check step reads each cited heading after the documents are written: a
 listed value with no entry, an empty entry, or a heading that does not exist or does not state
-the value word for word comes back to you as a mechanical defect, and what is still unfilled
-after the corrections goes to the spec stage as a design gap and is recorded as a pipeline
-defect.
+the value word for word comes back to you as a mechanical defect.
 
 The result is at the brief's output path, shaped as its `example`. Write it as the work goes,
 so a session that stops loses nothing: the members settled so far, rewritten in place each time
@@ -643,30 +640,6 @@ log, and update the result in place.
   Only the documents whose facts changed are written again. A ruling is settled: apply it, and
   record it in the review log as a decision.
 - A competing design: design the position the request names for that matter and nothing else.
-- Open design gaps ("Answer the design gaps the spec stage found"): the brief names `design gaps`
-  files. Each row names an element and a detail of it: a value that crosses a boundary between
-  repositories or that callers rely on, two documents (or the TRD and a document) that contradict
-  each other, or a design that is invalid as stated. Each file names the repository and the spec documents that hold the rows; read them and
-  every document a row cites. Decide what fills each gap through your specialists and the AWS
-  tools as for any other gap, and record each in its one home in the detailed design through the
-  result's `facts`, the change file, `trdChanges` where an obligation changes, and the review log.
-  Answer element by element, not row by row: for each element a row names, decide the row and
-  every related value of that same element the specs will need, the values criteria A15 to A20
-  of the `effective-architecture` skill require for it (its routes' fields and status codes, its
-  store's keys, indexes and conditions, its event's values, its names, its idempotency keys and
-  timeouts, its internal structure where the work needs it), so the next spec pass finds nothing
-  left unstated beside the row. Where a row is a contradiction, correct the documents themselves
-  so they state one design, and write the TRD change where the TRD is the side that changes;
-  where a row is an invalid design, replace it in its document with one that works. Answer every
-  row under `gapAnswers`: the file's `repository`, the row exactly as the file states it under
-  `gaps`, your decision, and the ids of the `facts` that state it. A row with no answer, or an
-  answer naming a fact id `facts` does not hold, comes back to you in the same session; answers
-  to rows an earlier round settled are not checked again. The `findings` you are handed are the
-  check that found the gaps; correct any defect they list as well. After you, the documents are
-  written and promoted, and the specs of the repositories whose files you were handed are written
-  again from them; the TRD is written again only when your `trdChanges` change. A repository's
-  gaps go to you once, so answer completely the first time. Fill `elementValues` for every element your
-  answer adds or changes, as in the decision itself.
 
 ## Your boundaries
 

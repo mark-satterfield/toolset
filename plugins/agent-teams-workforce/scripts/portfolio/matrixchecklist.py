@@ -14,7 +14,7 @@ architect. A name the naming command builds is listed as such and never left to 
 import json
 import re
 import sys
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, TypedDict
@@ -382,7 +382,6 @@ def value_problems(
     expected: Sequence[ExpectedValue],
     given: Sequence[Mapping[str, object]],
     arch: Path,
-    carried: Collection[tuple[str, str, str]] = (),
 ) -> list[UnfilledValue]:
     """Find each value the architect's result leaves unfilled or does not find stated where it says.
 
@@ -390,8 +389,6 @@ def value_problems(
         expected: The values the elements must state (:func:`expected_values`).
         given: The result's ``elementValues``.
         arch: The architecture root, whose working tree the cited headings are read from.
-        carried: The values already carried to the spec stage, by element, criterion and item;
-            they are not reported again.
 
     Returns:
         One unfilled value for each value the naming command does not build that has no entry,
@@ -405,10 +402,9 @@ def value_problems(
     unfilled: list[UnfilledValue] = []
     value: ExpectedValue
     for value in expected:
-        key: tuple[str, str, str] = (value["element"], value["criterion"], value["item"])
-        if value["namingCommand"] or key in carried:
+        if value["namingCommand"]:
             continue
-        entry: Mapping[str, object] | None = entries.get(key)
+        entry: Mapping[str, object] | None = entries.get((value["element"], value["criterion"], value["item"]))
         problem: str | None = "has no entry in elementValues" if entry is None else _entry_problem(arch, entry)
         if problem is not None:
             unfilled.append({**value_key(value), "problem": problem})

@@ -83,7 +83,6 @@ from orchestrator.core.journal_steps import (
 from orchestrator.core.models import StepError
 from orchestrator.flows.architecture_files import ARTIFACT_TRD, read_context
 from orchestrator.flows.build_ownership import refuse_ownership_drift, refuse_scope_drift
-from orchestrator.flows.design_gaps import DECIDED_HEADING, add_unfilled, decided_at_build, hold_open
 from orchestrator.flows.elaboration_files import (
     ARTIFACT_ELEMENTS,
     ARTIFACT_SPAN,
@@ -1116,7 +1115,7 @@ def context(run: StepRun) -> Completion:
     them and the contract files the repository holds. It plans the spec sessions the Story's
     entries call for (:func:`story_surfaces`). When another Epic came to own an entry the span
     planned (or stopped owning one) since the span step ran, or the architect's result came to name
-    other elements for the Stories (an answer to a design gap), nothing is specified: the span runs
+    other elements for the Stories, nothing is specified: the span runs
     again (``build_ownership.refuse_ownership_drift``, ``refuse_scope_drift``).
 
     Returns:
@@ -1422,46 +1421,12 @@ def built_line(item: Mapping[str, JsonValue], names: Mapping[str, str], matrix: 
     return f"{item_id}: {name}: {purpose}" if purpose else f"{item_id}: {name}"
 
 
-def _decided_lines(documents: Sequence[Path]) -> list[str]:
-    """List, for the Story's description, every detail its spec documents leave to the build.
-
-    Returns:
-        The heading and one line per decided-at-build row, naming its document; empty when there is none.
-
-    """
-    decided: list[str] = [f"- {path.name}: {row}" for path in documents for row in decided_at_build(path)]
-    return [f"{DECIDED_HEADING} (the build decides each):", *decided, ""] if decided else []
-
-
-def _carried_values(
-    run: StepRun,
-    held: Repository,
-    items: Sequence[Mapping[str, JsonValue]],
-    documents: Sequence[Path],
-) -> None:
-    """Write each element value the architecture check carried for an element the Story builds as a design gap.
-
-    The value goes to the data model or the contracts (``design_gaps.add_unfilled``), and is then
-    handled as any design gap: the one gap round, then decided at build.
-    """
-    built: set[str] = {matrix_id for item in items if isinstance(matrix_id := item.get(KEY_MATRIX_ID), str)}
-    add_unfilled(run, held.slug, built, documents[0], documents[1])
-
-
 @script_step(STORY_DOCUMENT_STEP)
 def story_document(run: StepRun) -> Completion:
     """Write the Story document of one repository from its reviewed spec documents.
 
-    Each element value the architecture check carried to the spec stage for an element this Story
-    builds is first written as a design gap of its spec (:func:`_carried_values`). A document
-    that still records an open design gap stops the repository here, before its Story and Tasks:
-    the gaps go back to the solutions architect, and this repository alone is specified
-    again from the answers; a gap row left after the round limit, or answered and held again, is
-    carried to the build instead (``design_gaps.hold_open``). Otherwise
-    each spec document first gets its last section, the links to the architecture and design
+    Each spec document first gets its last section, the links to the architecture and design
     documents of the component it covers (:func:`link_documents`), once every correction is made.
-    The Story's description lists every detail its documents leave to the build (their
-    decided-at-build rows, ``design_gaps.decided_at_build``), so the Story bead carries them.
 
     Returns:
         The Story document and the architecture citations its Story carries.
@@ -1471,8 +1436,6 @@ def story_document(run: StepRun) -> Completion:
     documents: list[Path] = [run.inputs.file(name) for name in (SPEC, DATA_MODEL, CRITERIA)]
     held_context: dict[str, JsonValue] = json_object(strict_json(run.inputs.file(CONTEXT)))
     items: list[dict[str, JsonValue]] = objects(held_context["items"])
-    _carried_values(run, held, items, documents)
-    hold_open(run, held.slug, held.path, documents)
     dispatch: DispatchArguments = dispatch_arguments()
     matrix: Matrix = run.tools.portfolio_read(STORY_DOCUMENT_STEP, read_matrix, matrix_path(None, os.environ))
     arch: Path = architecture_root(run)
@@ -1497,7 +1460,6 @@ def story_document(run: StepRun) -> Completion:
         *(f"- {built_line(item, names, matrix)}" for item in items),
         "",
         *([USED_AS_BUILT_HEADING, *(f"- {entry}" for entry in used), ""] if used else []),
-        *_decided_lines(documents),
         "Specifications:",
         *(f"- {path}" for path in documents),
         "",

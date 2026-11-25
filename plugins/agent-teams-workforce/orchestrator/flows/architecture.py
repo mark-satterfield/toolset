@@ -97,7 +97,6 @@ from orchestrator.core.journal_steps import (
 )
 from orchestrator.core.models import MalformedRequestError, StaleInputError
 from orchestrator.core.step_findings import record_for_run
-from orchestrator.flows import design_gaps
 from orchestrator.flows.architecture_check import check_step, handed_checklist, review_log_findings
 from orchestrator.flows.architecture_diagrams import syntax_problems
 from orchestrator.flows.architecture_files import (
@@ -358,8 +357,7 @@ def _handed_files(
     Returns:
         The PRD, the TRD, the context file, the state path and the element checklist; then each mechanical check
         result the step is handed, as findings; then the digest of the answers the step is handed
-        (a specialist's), each answer and each ruling; then each repository's open design gaps the
-        spec stage sent back (``design_gaps.handed``); then the example of each file the step writes.
+        (a specialist's), each answer and each ruling; then the example of each file the step writes.
 
     """
     findings: list[Path] = list(run.inputs.files(ARTIFACT_CHECK))
@@ -374,7 +372,6 @@ def _handed_files(
         *(() if digest is None else ((LABEL_DIGEST, digest),)),
         *((LABEL_ANSWER, path) for path in handed_answers(run)),
         *((LABEL_RULING, path) for path in dict.fromkeys(run.inputs.files(LABEL_RULING))),
-        *design_gaps.handed(run.context.work),
         *((LABEL_EXAMPLE, example) for example in examples),
     )
 
@@ -858,26 +855,12 @@ def result_check(run: StepRun) -> Callable[[Path], dict[str, JsonValue]]:
                 ),
                 *_request_problems(result["requests"]),
                 *_ui_recommendation_problems(result["specialistRecommendations"]),
-                *_gap_problems(run.context.work, arch, result),
             ]
         if problems:
             raise ArchitectureWorkError("\n".join(problems))
         return document
 
     return check
-
-
-def _gap_problems(work: Path, arch: Path, result: ArchitectureResult) -> list[str]:
-    """Find the open design gaps a result that asks no further round leaves unanswered.
-
-    Returns:
-        ``design_gaps.unanswered`` for a result whose every request can reuse its answer; empty
-        for one that asks a further round, which answers the gaps in the Decide after it.
-
-    """
-    if any(not answered(entry, arch) for entry in result["requests"]):
-        return []
-    return design_gaps.unanswered(work, result)
 
 
 def _round_check(context: ArchitectureContext) -> Callable[[Path], dict[str, JsonValue]]:
@@ -1007,8 +990,7 @@ def architect(run: StepRun) -> AgentLaunch:
     """Build the session of any step the solutions architect performs, always a fresh session.
 
     The Analyze step writes the first round of requests (:func:`_analyze`). Every other step (a
-    Decide, a correction after findings, a competing design the lead orders, the answer to the
-    open design gaps the spec stage filed) writes the
+    Decide, a correction after findings, a competing design the lead orders) writes the
     architecture result, its decisions, which every step after the first updates in place: a
     result already at the result path is kept, so a session that starts again continues from it,
     and a valid file there is never taken as the step's finished output without the session
@@ -1018,9 +1000,7 @@ def architect(run: StepRun) -> AgentLaunch:
     finding (:func:`_carry`). A result that asks a further round plans that round and a Decide
     after it; one that asks it after :data:`MAX_ROUNDS` rounds has its requests carried as a
     finding and goes on as one that asks none. A result that asks none plans the document writes it
-    needs (``architecture_rounds.write_steps``),
-    and records the open design gaps it was handed, which it answers, as answered
-    (``design_gaps.settle``).
+    needs (``architecture_rounds.write_steps``).
 
     The session is handed files and no folder of the architecture or of the PRDs: it reads the PRD
     it is handed in full, and the documents and headings the Epic reaches through the matrix, which
@@ -1064,8 +1044,6 @@ def architect(run: StepRun) -> AgentLaunch:
                 *recorded.problems,
             )
         unserved: list[JsonValue] = [*recorded.no_feature]
-        if not open_requests:
-            design_gaps.settle(accepted.context.work, accepted.step["id"])
         follows: tuple[StepGroup, ...] = (
             (round_steps(accepted, open_requests, number + 1, arch),)
             if open_requests
@@ -1089,12 +1067,7 @@ def architect(run: StepRun) -> AgentLaunch:
         output=Path(context["resultPath"]),
         validate=result_check(run),
         repair=repair_architecture_result,
-        outcome=(
-            "The architecture result of this PRD, with one entry of gapAnswers for every row of every design gaps "
-            f"file you are handed. {CHECKLIST_OUTCOME}"
-            if design_gaps.handed(run.context.work)
-            else f"The architecture result of this PRD. {CHECKLIST_OUTCOME}"
-        ),
+        outcome=f"The architecture result of this PRD. {CHECKLIST_OUTCOME}",
         accept=accept,
         add_dirs=(architecture_folder(run.context.work),),
         files=_handed_files(run, context, prd, EXAMPLE_RESULT),

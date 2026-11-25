@@ -11,11 +11,9 @@ to the caller unchanged. A stop request (the stop file, an interrupt) leaves the
 step that finds a file an earlier step wrote to a contract that has since changed
 (``StaleInputError``) is not failed: the step that wrote the file and every step after it are set
 back to planned, and the loop goes on from there; the same writer named twice in one dispatch
-fails the step, except for an open design gap (``DesignGapError``), whose rounds the step that
-reads the gaps bounds itself, carrying what is left to the build: only the repositories that hold
-gaps are set back, after one answer round the runner adds to the Architecture container. A file is stale only when its
-writer's session was made under another agent definition or contracts; a request a helper is
-launched from that its writer's current session wrote wrongly (``MalformedRequestError``) is
+fails the step. A file is stale only when its writer's session was made under another agent
+definition or contracts; a request a helper is launched from that its writer's current session
+wrote wrongly (``MalformedRequestError``) is
 corrected by that session from the errors, and the helper runs again; the same request malformed
 twice in one dispatch fails the step.
 
@@ -26,10 +24,7 @@ Steps run in walk order. Consecutive sibling steps that each have an agent, have
 and whose inputs are all done run as concurrent sessions under the dispatch's session slots. The
 child containers of a container the registry names (``Registry.children_together``) run at the
 same time, each its own steps in walk order, at most ``ATW_ORCH_SESSIONS`` of them. A stale file
-found in one of them ends them all, except an open design gap: then each of them that still holds
-a step of the kind that found the gap, not yet run, runs to that step first, and so does every
-sibling container beyond the session cap, so every repository's gaps go to the solutions
-architect in one round.
+found in one of them ends them all.
 
 Work that already succeeded is never redone: an agent step that did not fail and whose output
 file is valid and was written since the step started is recorded from that file, and its agent is
@@ -110,7 +105,6 @@ from .journal_views import JournalIndex, index_journal
 from .models import (
     OWNERSHIP_REPLANS,
     AgentStep,
-    DesignGapError,
     MalformedRequestError,
     OwnershipChangedError,
     PipelineDefectError,
@@ -857,20 +851,6 @@ def replan_retired(journal: Journal, registry: Registry) -> list[StepId]:
     return changed
 
 
-def _plan_gap_round(journal: Journal, gap: DesignGapError, moment: str) -> None:
-    """Plan the one gap round the repositories that found open design gaps share.
-
-    The solutions architect's step that answers the filed gaps, the index and the check after it
-    become the last steps of the Architecture container, and each step the TRD confirmation needs
-    is planned again; every repository with a gap is set back in its own container
-    (:meth:`JournalRunner._replan_stale`).
-    """
-    step_journal.add_steps(journal, list(gap.plans), moment, parent=gap.container)
-    confirm: StepId
-    for confirm in gap.reconfirm:
-        step_journal.replan_step(journal, confirm, moment)
-
-
 def _named(path: Path | None) -> tuple[str, ...]:
     """Give a file that may be absent as evidence.
 
@@ -884,31 +864,17 @@ def _named(path: Path | None) -> tuple[str, ...]:
 def _reset_stale(
     journal: Journal,
     *,
-    gap: DesignGapError | None,
-    scopes: dict[StepId, StepId | None],
     spans: list[StepId],
     rewrites: list[StepId],
 ) -> None:
     """Set back what stale inputs need run again, in one journal change.
 
-    The gap round is planned once when a design gap was found; each scoped writer is set back with
-    the steps after it in its scope; the first unscoped writer in walk order is set back with every
-    step after it; each span step whose ownership or scope changed is set back alone, keeping the
-    steps it planned (``step_journal.reset_step``); and each writer to rewrite is set back alone
+    Each span step whose ownership or scope changed is set back alone, keeping the steps it
+    planned (``step_journal.reset_step``); and each writer to rewrite is set back alone
     (``step_journal.replan_step``).
     """
     moment: str = step_journal.timestamp()
-    if gap is not None:
-        _plan_gap_round(journal, gap, moment)
     writer: StepId
-    scope: StepId | None
-    for writer, scope in scopes.items():
-        if scope is not None:
-            step_journal.invalidate_from(journal, writer, moment, within=scope)
-    unscoped: list[StepId] = [writer for writer, scope in scopes.items() if scope is None]
-    if unscoped:
-        order: list[StepId] = [step["id"] for step in step_journal.steps_in_order(journal)]
-        step_journal.invalidate_from(journal, min(unscoped, key=order.index), moment)
     for writer in spans:
         step_journal.reset_step(journal, writer, moment)
     for writer in rewrites:
@@ -939,10 +905,6 @@ class JournalRunner:
         """The stale files found by the steps of the group that runs now."""
         self._staling: threading.Lock = threading.Lock()
         """Held while a step that found an ownership change counts it and keeps it (:meth:`_keep_ownership_change`)."""
-        self.gap_steps: set[StepId] = set()
-        """The steps of the group that runs now that found an open design gap (``DesignGapError``)."""
-        self.gap_keys: set[str] = set()
-        """The script keys of those steps: a container still holding one not run runs to it."""
         self.corrected: set[Path] = set()
         """The request files whose writer's session was asked in this dispatch to correct them."""
         self._correcting: threading.Lock = threading.Lock()
@@ -1028,7 +990,6 @@ class JournalRunner:
                     parallel(self.context, [partial(self._run_container, container) for container in containers])
             else:
                 self._run_group(journal, first["id"])
-            self._run_to_gap_checks(containers)
         finally:
             # A failure of the re-plan keeps the round's own failure as its __context__.
             self._replan_stale()
@@ -1049,68 +1010,15 @@ class JournalRunner:
         Each round closes the finished steps inside the container, then runs its first step
         without child steps that is not done, with the steps that run together with it. A stale
         file ends the round's container at once: its writer is set back to planned after every
-        container of the group has ended (:meth:`_replan_stale`). When every stale file is an open
-        design gap, the container goes on until it has run its own step of the kind that found a
-        gap (:meth:`_before_gap_check`), so its gaps are filed in the same round.
+        container of the group has ended (:meth:`_replan_stale`).
         """
-        while not self.stale or self._before_gap_check(container):
+        while not self.stale:
             self._close_finished(within=container)
             journal: Journal = step_journal.read_journal(self.path)
             leaf: Step | None = _open_leaf(step_journal.find_step(journal, container))
             if leaf is None:
                 return
             self._run_group(journal, leaf["id"])
-
-    def _run_to_gap_checks(self, ran: Sequence[StepId]) -> None:
-        """Run every other container beside the group to its own design gap check while only design gaps are open.
-
-        The group that ran holds at most ``ATW_ORCH_SESSIONS`` containers; its siblings beyond that
-        cap run to their own gap check too, in groups of that size, before the gap round is planned
-        (:meth:`_replan_stale`), so one round of the architect covers every repository.
-
-        Args:
-            ran: The containers of the group that ran; empty when the step ran in no such container.
-
-        """
-        if not ran:
-            return
-        while waiting := self._gap_checks_waiting(ran[0]):
-            with contextlib.redirect_stdout(sys.stderr):
-                parallel(self.context, [partial(self._run_container, container) for container in waiting])
-
-    def _gap_checks_waiting(self, member: StepId) -> list[StepId]:
-        """Name the sibling containers that still have to run to their own design gap check.
-
-        Returns:
-            At most ``ATW_ORCH_SESSIONS`` sibling containers of ``member``, itself included, for which
-            :meth:`_before_gap_check` holds; empty when no design gap is open.
-
-        """
-        if not self.stale:
-            return []
-        journal: Journal = step_journal.read_journal(self.path)
-        parent: Step | None = step_journal.parent_step(journal, member)
-        siblings: list[Step] = [] if parent is None else parent["steps"]
-        return [step["id"] for step in siblings if step["steps"] and self._before_gap_check(step["id"])][
-            : session_cap()
-        ]
-
-    def _before_gap_check(self, container: StepId) -> bool:
-        """Tell whether a container goes on to its own design gap check while only design gaps are open.
-
-        Returns:
-            True when every stale file found is an open design gap (``DesignGapError``) and the
-            container holds a step that is not done, has not found a gap in this round and has the
-            script key of a step that found one (:attr:`gap_keys`).
-
-        """
-        if not all(isinstance(stale, DesignGapError) for stale in self.stale):
-            return False
-        held: Step = step_journal.find_step(step_journal.read_journal(self.path), container)
-        return any(
-            step.get("script") in self.gap_keys and step["status"] != STATUS_DONE and step["id"] not in self.gap_steps
-            for step in step_journal.steps_in_order_from(held)
-        )
 
     def _replan_stale(self) -> None:
         """Correct each stale file in place, or set back only what must run again.
@@ -1126,38 +1034,23 @@ class JournalRunner:
         A change of ownership or scope (``OwnershipChangedError``, which names no file) sets back
         the span step alone, keeping the repository containers it planned; run again, the span
         writes its files as they are now and sets back only the containers whose placement
-        changed (``repo_scoping.span``). When open design
-        gaps were found, the gap round they share is planned once, in the same journal change
-        (:func:`_plan_gap_round`), and each gap's repository is set back in its scope. Runs after
-        the whole group, so no session of the group is running when a step is changed.
+        changed (``repo_scoping.span``). Runs after the whole group, so no session of the group is
+        running when a step is changed.
 
         """
         found: list[StaleInputError] = self.stale
         self.stale = []
-        self.gap_steps = set()
-        self.gap_keys = set()
         if not found:
             return
-        gaps: list[DesignGapError] = [stale for stale in found if isinstance(stale, DesignGapError)]
         spans: list[StepId] = list(
             dict.fromkeys(stale.writer for stale in found if isinstance(stale, OwnershipChangedError)),
         )
         rewrites: list[StepId] = self._uncorrected(
-            [stale for stale in found if not isinstance(stale, (DesignGapError, OwnershipChangedError))],
+            [stale for stale in found if not isinstance(stale, OwnershipChangedError)],
         )
-        scopes: dict[StepId, StepId | None] = {gap.writer: gap.within for gap in gaps}
-        self.replanned.update([*scopes, *spans, *rewrites])
-        if scopes or spans or rewrites:
-            step_journal.update_journal(
-                self.path,
-                partial(
-                    _reset_stale,
-                    gap=gaps[0] if gaps else None,
-                    scopes=scopes,
-                    spans=spans,
-                    rewrites=rewrites,
-                ),
-            )
+        self.replanned.update([*spans, *rewrites])
+        if spans or rewrites:
+            step_journal.update_journal(self.path, partial(_reset_stale, spans=spans, rewrites=rewrites))
 
     def _uncorrected(self, found: list[StaleInputError]) -> list[StepId]:
         """Correct each stale file in place (:meth:`_correct_stale`), and name the writers that must run again.
@@ -1428,11 +1321,7 @@ class JournalRunner:
 
         A stale file the step finds is kept for :meth:`_replan_stale`, which has its writer correct
         it in place, and the step is not failed, unless the step that wrote the file was planned
-        again in this dispatch already. An open
-        design gap (``DesignGapError``) is always kept, with the step and its script key, so the
-        containers running beside it run to their own gap check (:meth:`_before_gap_check`): the step
-        that reads the gaps bounds its rounds and carries what is left (``design_gaps.hold_open``). A
-        malformed request the step finds is corrected by its writer's session
+        again in this dispatch already. A malformed request the step finds is corrected by its writer's session
         (:meth:`_correct_request`), and the step is not failed, unless that request was corrected
         in this dispatch already. A change of the Epic that owns an entry (``OwnershipChangedError``)
         is kept for :meth:`_replan_stale` (:meth:`_keep_ownership_change`): the span step is planned
@@ -1460,10 +1349,7 @@ class JournalRunner:
             self._record_failure(step_id, stage_of(step), changed)
             raise
         except StaleInputError as stale:
-            if isinstance(stale, DesignGapError):
-                self.gap_steps.add(step_id)
-                self.gap_keys.update([step["script"]] if "script" in step else [])
-            if stale.writer not in self.replanned or isinstance(stale, DesignGapError):
+            if stale.writer not in self.replanned:
                 self.stale.append(stale)
                 return
             writer: Step = step_journal.find_step(step_journal.read_journal(self.path), stale.writer)

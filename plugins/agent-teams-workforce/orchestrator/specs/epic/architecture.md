@@ -76,9 +76,7 @@ follows it, among its siblings, before the index and the check (`architecture_ro
 `trdPath`), `context`, `state` (its state file) and an `example` of each file the step writes
 (`skills/artifact-handoff/examples/`), which it is handed instead of the 45K-character schema; and,
 on a later step, the `answers digest`, each `answer`, the `findings` (check results) and each
-`ruling` that step is handed, and, while the spec stage holds open design gaps, each
-repository's `design gaps` (`design_gaps.handed`, which hands no repository whose gaps already went
-to the architect `design_gaps.MAX_ROUNDS` (1) time: its rows are carried to the build). One file is written from the matrix for it, the `element checklist`
+`ruling` that step is handed. One file is written from the matrix for it, the `element checklist`
 (`architecture_check.handed_checklist`): every `elementValues` entry and reach verdict the check will
 require. Otherwise it reads the Epic's pack and runs `atw-matrix` reads itself. The session is granted the architecture work folder and no
 folder of the architecture or of the PRDs.
@@ -88,7 +86,6 @@ folder of the architecture or of the PRDs.
 | Analyze ("Analyze the PRD against the architecture and put the questions and draft reviews to the specialists") | the open-run step | the state file, then `<arch-work>/questions.json` (`specialist-round.schema.json`): one request per specialist | one step per request whose answer cannot be reused (`architecture_rounds.reuse_refusal`), then a Decide step (round 1), handed every answer of the round: those the steps write, and as its parameter `answered` each that was reused |
 | Decide ("Decide the architecture with the specialists' answers") | the step whose output asked a round | the architecture result at the context's `resultPath`, updated in place | a further round and a Decide (round 2) when the result's `requests` holds an unanswered request; otherwise the document writes |
 | A correction ("Correct what the mechanical check found"), or a step the lead adds | the check, or the lead | the architecture result, updated in place | as for Decide |
-| The answer to the open design gaps ("Answer the design gaps the spec stage found") | the journal runner, at the end of the container, when the spec stage filed open design gaps | the architecture result, updated in place, with one `gapAnswers` entry for each row of each `design gaps` file it is handed | as for Decide; with no further round, the gaps are recorded as answered (`design_gaps.settle`) |
 
 The output check of the Analyze step validates the round and the state file, and refuses a request
 naming an agent the `find-specialists` catalog (`skills/find-specialists/catalog.json`) does not
@@ -257,18 +254,16 @@ tree (`matrixchecklist.value_problems`) is a mechanical defect. It writes the ex
 unfilled values to `<arch-work>/checks/<step id>/element-checklist.json` (file `element
 checklist`). A journal whose promotion is done and none of whose done checks recorded that file
 is not held to the checklist (`architecture_check.checklist_applies`): its architecture was
-approved before the checklist, and a later check (after a gap round) does not send it back
-through it. It writes
+approved before the checklist, and a later check does not send it back through it. It writes
 `<arch-work>/checks/<step id>/check.json` (the folder is the check step's own, so a later check
 never overwrites an earlier one) and records it as the file `check result`. It then plans what
 follows by rule over the matrix, the criteria file, the architect's result and the review log:
 
 | What the check finds | What it plans |
 |---|---|
-| open design gaps the spec stage filed (`design_gaps.handed`), whatever else it finds | the architect's step that answers them (`design_gaps.gap_round`), handed the check result, an index and a new check that starts with no corrections spent, because the answer is a new design change |
 | a mechanical defect | a correction step for the architect, handed the check result, an index and a new check; after 3 corrections each defect left is recorded as an `architecture-check-carried` finding for the Epic, written under `carried` in the check result, and the check plans what follows as with no defect; it never fails the step |
 | a problem `atw-matrix check` reports for the matrix file that names no entry the result adds or changes, no entry of this Epic and none of its requirements | never a defect of this Epic: a `matrix-problem` finding for the Epic of the requirement it names, else the Epic the matrix records as driving its first entry, else this Epic, written under `otherEpics` in the check result (`architecture_check.split_matrix_problems`); the reach, criteria and review-log checks run whatever the file's problems |
-| after 3 corrections, unfilled element values and no other defect | the values are carried to the spec stage (`design_gaps.carry_unfilled`: `<arch-work>/design-gaps/unfilled-values.json` and a warning note naming the pipeline defect), are not checked again, and the check plans what follows as with no defect |
+| after 3 corrections, unfilled element values and no other defect | the values are no longer problems of the check, and the check plans what follows as with no defect |
 | no defect, the result's conclusion is `unsettled`, and no lead has run in the container | the step of `architecture-team-lead`, an index and a new check |
 | otherwise, whatever the conclusion | the TRD write, unless the journal's last TRD write is done and its request states the result's `trdChanges` and `sharedCapabilities` as they stand (`trd_steps.write_current`), then the promotion step |
 
@@ -302,8 +297,8 @@ included, and hands none to the owner.
 
 Agent `trd-author`, step "Write the TRD from the architect's decisions", planned by a check that
 found no defect, before the promotion; it runs at most once per pass through the architecture, and
-a design-gap round plans it only when the result's `trdChanges` or `sharedCapabilities` differ
-from those the last done TRD write applied (`trd_steps.write_current`). The launch
+a later check plans it only when the result's `trdChanges` or `sharedCapabilities` differ from
+those the last done TRD write applied (`trd_steps.write_current`). The launch
 builder (`architecture.trd_author`, with `trd_steps.write_request`) writes the request from the
 context file and the architect's result: mode `complete`, the result's `trdChanges` as `changes`
 and its `sharedCapabilities`, at `<helpersFolder>/trd.request.json` with the answer beside it
@@ -340,6 +335,4 @@ concerned. An Epic not yet elaborated reads the architecture as it stands when i
 ## After the container
 
 The outermost step "TRD" (`trd.confirm`, `trd-authoring.md`) follows, then the repository span
-(`repo-scoping.md`). A design-gap round (`spec-authoring.md`, step 9) adds its steps to the end of
-this container after the specs have started, and plans the TRD confirmation again; the span and
-the repositories without gaps keep their state.
+(`repo-scoping.md`).
