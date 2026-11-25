@@ -120,8 +120,7 @@ documents and the TRD state it.
   it specifies an addition to, or leaves out an `addition` entry it specifies no addition to, is
   a finding under I7: the correction makes its list name exactly the `addition` entries that
   document specifies no addition to.
-- A detail the Story needs that no approved document states is left out of the documents, and
-  the build agents decide it themselves, consistent with the design and the repository. Its
+- A detail the Story needs that no approved document states is left out of the documents. Its
   absence is never a finding: never write a finding asking an author or the solutions architect
   to add such a detail.
 - A detail a document states differently from the approved document that records it is a finding
