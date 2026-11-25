@@ -26,7 +26,8 @@ document's structure".
 3. **Concrete values.** Name the input, the limit and the expected result as values or as a value
    the referenced source defines ("more than the 20 items the page size defines", not "too many
    items"). A number the sources do not give is not invented: the criterion cites where the value
-   comes from, or the gap is reported.
+   comes from. In a PRD the missing value is reported; in a specification's criteria document,
+   where no source gives one, the criterion leaves the number out and records no gap.
 4. **No judgement words.** "Fast", "user-friendly", "appropriate", "correctly", "gracefully",
    "as expected", "etc." and "should" make a criterion untestable. Replace each with the
    observable fact it stands for, or report the requirement as ambiguous.

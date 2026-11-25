@@ -121,13 +121,11 @@ write exactly the shape that schema defines, and no other fields. Each field mea
 Epic contracts says it means: the local key series (T1...), the surface set and what an empty
 list and null each mean, and the score rules (the job size on the wsjf skill's Fibonacci scale
 inside its range, the confidence a percent), and the title rule `tasks.schema.json` states. Cite the work items, requirements and decisions each Task builds exactly as the inputs
-name them. Take the test strategy from the spec, never invent one. A spec document's
-`## Decided at build` table lists the details no approved document states that the build
-decides: kind `B`, local to the repository, and kind C rows the pipeline carried there after the
-architect's round. Give every row to the Task that builds the element it names: cite the section
-under that Task's `specSections` (`<spec path>#Decided at build`) and name the row's detail in the
-Task's description as a detail its build decides. Add no Task for a row alone. A carried row
-whose value a Task of another Story uses is ordered by the Task edges step, not by you. Size every Task on the wsjf skill's scale with an honest range and confidence: judge
+name them. Take the test strategy from the spec, never invent one. A detail the spec
+does not state is the implementer's ordinary decision: it first keeps what the existing code
+already does (names, signatures, package layout, dependency groups, conventions) and chooses
+something new, consistent with the design and the repository, only when the code has nothing
+for it. Give such a detail no Task of its own and write nothing about it in a Task. Size every Task on the wsjf skill's scale with an honest range and confidence: judge
 volume, complexity and uncertainty, not calendar or human time. Split work the wsjf skill rates
 too large when feasible; otherwise record the judged size and explanation. Do not assign Epic
 value or WSJF arithmetic. Prefer one UI artifact per Task; if input forces two, preserve

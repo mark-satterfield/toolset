@@ -633,13 +633,9 @@ log, and update the result in place.
   record it in the review log as a decision.
 - A competing design: design the position the request names for that matter and nothing else.
 - Open design gaps ("Answer the design gaps the spec stage found"): the brief names `design gaps`
-  files. A spec author found a kind C detail its Story needs that no approved document states: a
-  value that crosses a boundary between repositories or that callers rely on, two documents (or
-  the TRD and a document) that contradict each other, or a design that is invalid as stated. Names
-  the naming standard produces and details local to one repository are never handed to you: the
-  spec builds the names with the naming command and the build decides the local details. Each row
-  names the element and the missing detail, and the repository stopped before its Story and
-  Tasks. Each file names the repository and the spec documents that hold the rows; read them and
+  files. Each row names an element and a detail of it: a value that crosses a boundary between
+  repositories or that callers rely on, two documents (or the TRD and a document) that contradict
+  each other, or a design that is invalid as stated. Each file names the repository and the spec documents that hold the rows; read them and
   every document a row cites. Decide what fills each gap through your specialists and the AWS
   tools as for any other gap, and record each in its one home in the detailed design through the
   result's `facts`, the change file, `trdChanges` where an obligation changes, and the review log.
@@ -658,9 +654,7 @@ log, and update the result in place.
   check that found the gaps; correct any defect they list as well. After you, the documents are
   written and promoted, and the specs of the repositories whose files you were handed are written
   again from them; the TRD is written again only when your `trdChanges` change. A repository's
-  gaps go to you once: a row you answered that its specs hold again, and every row still open
-  after that one round, is carried to the build, which decides it, and the pipeline records it as
-  a defect, so answer completely the first time. Fill `elementValues` for every element your
+  gaps go to you once, so answer completely the first time. Fill `elementValues` for every element your
   answer adds or changes, as in the decision itself.
 
 ## Your boundaries

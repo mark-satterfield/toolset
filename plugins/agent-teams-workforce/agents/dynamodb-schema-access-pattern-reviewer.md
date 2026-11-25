@@ -69,9 +69,9 @@ mean:
 - A Task can name the table, its keys, its indexes and the access pattern it implements without
   inventing a design (I7).
 
-When a pattern cannot be served as the design records it, the defect is in the design, not the
-spec: the finding's correction is that the document names, under the store's section, the
-pattern and the element whose design lacks the key or index, and does not settle it. A pattern
+When a pattern cannot be served as the design records it, the document still states the store as
+the design records it and writes nothing about the missing key or index: the build decides it,
+consistent with the existing code and the design, so raise no finding for it. A pattern
 the document states differently from the detailed design is a finding that the document state it
 as the design records it.
 
