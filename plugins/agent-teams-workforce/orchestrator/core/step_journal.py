@@ -1403,9 +1403,9 @@ def replan_step(journal: Journal, step_id: StepId, moment: str) -> Invalidation:
 def remove_steps(journal: Journal, step_ids: Sequence[StepId], moment: str) -> Invalidation:
     """Take steps out of the journal, with the steps below them, and change no other step's state.
 
-    Every step a removed step planned goes with it. The record of each removed step on the step
-    that planned it (:func:`planned_for_name`) goes with it, and the inputs that named a removed
-    step lose that id.
+    Every step a removed step planned goes with it. The record of each removed step, a step below
+    a named one included, on the step that planned it (:func:`planned_for_name`) goes with it,
+    and the inputs that named a removed step lose that id.
 
     Args:
         journal: The journal; changed in place.
@@ -1416,11 +1416,12 @@ def remove_steps(journal: Journal, step_ids: Sequence[StepId], moment: str) -> I
         No ids reset, the ids removed, and the ids of the steps whose inputs lost a removed id.
 
     """
-    records: set[str] = {planned_for_name(step_id) for step_id in step_ids}
+    invalidation: Invalidation = _invalidated(journal, moment, [], [], list(step_ids))
+    records: set[str] = {planned_for_name(step_id) for step_id in (*step_ids, *invalidation["removed"])}
     step: Step
     for step in _walk(journal["steps"]):
         step["artifacts"] = [artifact for artifact in step["artifacts"] if artifact["name"] not in records]
-    return _invalidated(journal, moment, [], [], list(step_ids))
+    return invalidation
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

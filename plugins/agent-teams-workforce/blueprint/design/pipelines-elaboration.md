@@ -761,7 +761,9 @@ Decisions in this diagram, each for one reason:
   `builds_entries`. Two Epics elaborated at once cannot both claim an entry: each Task bead is
   written under the ownership lock after a fresh ownership check, and a change of owner runs the
   span step again alone (`OwnershipChangedError`): it keeps the repository containers it planned
-  and sets back only those whose placed items changed, whose steps then correct their files in
-  place. `backfill_built_entries.py` gives Tasks
+  for the repositories the span still places, drops those it no longer places with their steps
+  and records, keys every Story `S<n>` by its repository's place in the span, and sets back only
+  the kept containers whose placed items or Story key changed, whose steps then correct their
+  files in place. `backfill_built_entries.py` gives Tasks
   written before this rule their `builds_entries` and reports the entries two Epics already
   build, for the owner's cleanup.

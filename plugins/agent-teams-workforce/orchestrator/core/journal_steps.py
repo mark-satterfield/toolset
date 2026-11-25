@@ -432,12 +432,15 @@ class Completion:
     The step is marked done in that change, unless it plans child steps under itself: it then
     stays running, and the runner marks it done when those child steps are done. ``again`` names
     steps set back to planned in the same change (``step_journal.replan_step``), so they run again
-    with their outputs on disk to correct.
+    with their outputs on disk to correct. ``drop`` names steps taken out of the journal in the
+    same change, with the steps below them and their records (``step_journal.remove_steps``), for
+    steps an earlier run of the step planned that its result no longer needs.
     """
 
     artifacts: tuple[Artifact, ...] = ()
     add: tuple[StepGroup, ...] = ()
     again: tuple[StepId, ...] = ()
+    drop: tuple[StepId, ...] = ()
 
     @property
     def stays_running(self) -> bool:

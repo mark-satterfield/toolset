@@ -124,7 +124,7 @@ from step_journal_contract import KIND_VALUE, PLANNED_FOR_PREFIX, StepId
 
 if TYPE_CHECKING:
     from architecture_work_contract import ArchitectureResult
-    from step_journal_contract import Artifact, Journal, StepPlan
+    from step_journal_contract import Artifact, Journal, Step, StepPlan
 
 SPAN: Final = "atw-matrix epic --closure"
 """The script key of the span step."""
@@ -1206,14 +1206,29 @@ def _ruling(
     return ruling
 
 
-def _spec_steps(run: StepRun, ruling: PlacementRuling, repos: list[str], start: int) -> tuple[StepGroup, ...]:
+def _story_keys(repos: Sequence[str]) -> dict[str, str]:
+    """Key each repository's Story by its place in the span, as ``spec_authoring.items_by_story`` keys it.
+
+    Returns:
+        ``S<n>`` for the n-th repository of the span, by repository path.
+
+    """
+    return {repo: f"S{index}" for index, repo in enumerate(repos, 1)}
+
+
+def _spec_steps(
+    run: StepRun,
+    ruling: PlacementRuling,
+    repos: list[str],
+    keys: Mapping[str, str],
+) -> tuple[StepGroup, ...]:
     """Plan one container per repository of the span, each with its first step, after the span step.
 
     Args:
         run: The span step.
         ruling: The placements.
         repos: The repository paths to plan a container for.
-        start: The number of the first container's Story key (``S<start>``).
+        keys: The Story key of every repository of the span (:func:`_story_keys`).
 
     Returns:
         The group, or nothing when no repository is given. A container is named for its
@@ -1230,7 +1245,7 @@ def _spec_steps(run: StepRun, ruling: PlacementRuling, repos: list[str], start: 
         check_type(placement[KEY_REPO_PATH], str) for placement in ruling[KEY_PLACEMENTS] if placement["frontend"]
     }
     steps: list[NewStep] = []
-    for index, (repo, slug) in enumerate(slugs.items(), start):
+    for repo, slug in slugs.items():
         name: str = Path(repo).name
         first: StepPlan = {
             "description": f"Gather what {name} builds",
@@ -1241,7 +1256,7 @@ def _spec_steps(run: StepRun, ruling: PlacementRuling, repos: list[str], start: 
         params: dict[str, JsonValue] = {
             "repoPath": repo,
             "slug": slug,
-            "storyKey": f"S{index}",
+            "storyKey": keys[repo],
             "frontend": repo in frontend,
         }
         container: StepPlan = {"description": name, "purpose": SPECS_PURPOSE}
@@ -1257,6 +1272,8 @@ class HeldContainers:
     """The span step's records of the steps it planned (``step_journal.planned_for_name``), recorded again."""
     firsts: dict[str, StepId]
     """The first step of each kept container, by the repository path it was handed."""
+    containers: dict[str, StepId]
+    """Each kept container, by the repository path its first step was handed."""
 
 
 def _held_containers(run: StepRun) -> HeldContainers:
@@ -1281,12 +1298,49 @@ def _held_containers(run: StepRun) -> HeldContainers:
         and artifact["name"].removeprefix(PLANNED_FOR_PREFIX) in present
     ]
     firsts: dict[str, StepId] = {}
+    containers: dict[str, StepId] = {}
     for artifact in records:
         value: object = artifact.get("value")
         repo: JsonValue = value.get("repoPath") if isinstance(value, dict) else None
         if isinstance(repo, str):
-            firsts[repo] = StepId(artifact["name"].removeprefix(PLANNED_FOR_PREFIX))
-    return HeldContainers(tuple(records), firsts)
+            first: StepId = StepId(artifact["name"].removeprefix(PLANNED_FOR_PREFIX))
+            firsts[repo] = first
+            above: Step | None = step_journal.parent_step(journal, first)
+            containers[repo] = first if above is None else above["id"]
+    return HeldContainers(tuple(records), firsts, containers)
+
+
+def _kept_records(held: HeldContainers, keys: Mapping[str, str]) -> tuple[list[Artifact], set[str]]:
+    """Keep the records of the held containers the span still places, each with its Story key now.
+
+    Args:
+        held: The containers an earlier run planned.
+        keys: The Story key of every repository of the span (:func:`_story_keys`).
+
+    Returns:
+        The records of the containers kept, and the repositories whose Story key changed.
+
+    """
+    gone: set[str] = {
+        step_journal.planned_for_name(step)
+        for repo in held.firsts
+        if repo not in keys
+        for step in (held.firsts[repo], held.containers[repo])
+    }
+    kept: list[Artifact] = []
+    rekeyed: set[str] = set()
+    artifact: Artifact
+    for artifact in held.records:
+        if artifact["name"] in gone:
+            continue
+        value: object = artifact.get("value")
+        repo: JsonValue = value.get("repoPath") if isinstance(value, dict) else None
+        if isinstance(value, dict) and isinstance(repo, str) and value.get("storyKey") != keys[repo]:
+            kept.append(value_artifact(artifact["name"], {**value, "storyKey": keys[repo]}))
+            rekeyed.add(repo)
+            continue
+        kept.append(artifact)
+    return kept, rekeyed
 
 
 def _placed(items: Sequence[Mapping[str, object]]) -> dict[str, list[str]]:
@@ -1329,9 +1383,12 @@ def _containers(
     """Plan the repository containers the span needs, keeping those an earlier run planned.
 
     A container an earlier run planned and the journal still holds (:func:`_held_containers`)
-    stays, with its record; its first step is set back only when the items placed in its
-    repository differ from those the earlier run placed there, so it runs again with the files
-    on disk. A container is planned only for a repository that has none.
+    stays, with its record, when the span still places its repository; one whose repository the
+    span no longer places is dropped with its steps and its records. Every Story key is the
+    repository's place in the span (:func:`_story_keys`). A kept container's first step is set
+    back when the items placed in its repository differ from those the earlier run placed there,
+    or its Story key changed, so it runs again with the files on disk. A container is planned
+    only for a repository that has none.
 
     Args:
         run: The span step.
@@ -1342,21 +1399,26 @@ def _containers(
 
     Returns:
         The span step's completion: what it wrote with the records of the kept containers, the
-        containers to add, and the first steps to set back.
+        containers to add, the first steps to set back and the containers to drop.
 
     """
     held: HeldContainers = _held_containers(run)
     earlier: dict[str, list[str]] = _placed(items[0])
     now: dict[str, list[str]] = _placed(items[1])
     names: dict[str, str] = {check_type(p[KEY_REPO_PATH], str): p["repoName"] for p in ruling[KEY_PLACEMENTS]}
+    keys: dict[str, str] = _story_keys(repos)
+    records: list[Artifact]
+    rekeyed: set[str]
+    records, rekeyed = _kept_records(held, keys)
     return Completion(
-        artifacts=(*written, *held.records),
-        add=_spec_steps(run, ruling, [repo for repo in repos if repo not in held.firsts], len(held.firsts) + 1),
+        artifacts=(*written, *records),
+        add=_spec_steps(run, ruling, [repo for repo in repos if repo not in held.firsts], keys),
         again=tuple(
             held.firsts[repo]
             for repo in repos
-            if repo in held.firsts and now.get(names[repo]) != earlier.get(names[repo])
+            if repo in held.firsts and (repo in rekeyed or now.get(names[repo]) != earlier.get(names[repo]))
         ),
+        drop=tuple(held.containers[repo] for repo in held.containers if repo not in keys),
     )
 
 

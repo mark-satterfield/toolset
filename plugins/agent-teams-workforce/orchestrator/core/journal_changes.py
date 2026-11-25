@@ -89,33 +89,20 @@ def _records(planned: Sequence[NewStep], added: Sequence[Step], *, outermost: bo
     return records
 
 
-@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def apply_completion(journal: Journal, step_id: StepId, completion: Completion, moment: str) -> Step:
-    """Record one step's result in a journal: the whole of it, for one journal write.
-
-    The step's artifacts are recorded, every planned step is added, each added step is recorded
-    on the completing step as the value artifact :func:`step_journal.planned_for_name` names, each
-    step the result names to run again is set back (``step_journal.replan_step``), and
-    the step is marked done unless it waits for child steps planned under it. A change the journal refuses raises
-    ``StepRefusedError``, and nothing is written.
+def _add_groups(journal: Journal, step_id: StepId, groups: Sequence[StepGroup], moment: str) -> None:
+    """Add the steps a result plans, and record each added step on the completing step.
 
     Args:
         journal: The journal; changed in place.
-        step_id: The running step whose result this is.
-        completion: What the result records.
+        step_id: The running step whose result plans the steps.
+        groups: The planned steps, by the place they go.
         moment: The present date-time, as ``step_journal.timestamp`` gives it.
 
-    Returns:
-        The step after the change.
-
     """
-    artifact: Artifact
-    for artifact in completion.artifacts:
-        step_journal.record_artifact(journal, step_id, artifact)
     parent: Step | None = step_journal.parent_step(journal, step_id)
     follows: StepId = step_id
     group: StepGroup
-    for group in completion.add:
+    for group in groups:
         plans: list[StepPlan] = [_plan(new, step_id) for new in group.steps]
         added: list[Step]
         if group.where == AFTER_THIS:
@@ -137,9 +124,38 @@ def apply_completion(journal: Journal, step_id: StepId, completion: Completion, 
         record: ValueArtifact
         for record in _records(group.steps, added, outermost=True):
             step_journal.record_artifact(journal, step_id, record)
+
+
+@typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
+def apply_completion(journal: Journal, step_id: StepId, completion: Completion, moment: str) -> Step:
+    """Record one step's result in a journal: the whole of it, for one journal write.
+
+    The step's artifacts are recorded, every planned step is added, each added step is recorded
+    on the completing step as the value artifact :func:`step_journal.planned_for_name` names, each
+    step the result names to run again is set back (``step_journal.replan_step``), each step it
+    names to drop is taken out (``step_journal.remove_steps``), and the step is marked done
+    unless it waits for child steps planned under it. A change the journal refuses raises
+    ``StepRefusedError``, and nothing is written.
+
+    Args:
+        journal: The journal; changed in place.
+        step_id: The running step whose result this is.
+        completion: What the result records.
+        moment: The present date-time, as ``step_journal.timestamp`` gives it.
+
+    Returns:
+        The step after the change.
+
+    """
+    artifact: Artifact
+    for artifact in completion.artifacts:
+        step_journal.record_artifact(journal, step_id, artifact)
+    _add_groups(journal, step_id, completion.add, moment)
     again: StepId
     for again in completion.again:
         step_journal.replan_step(journal, again, moment)
+    if completion.drop:
+        step_journal.remove_steps(journal, completion.drop, moment)
     if completion.stays_running:
         return step_journal.find_step(journal, step_id)
     return step_journal.finish_step(journal, step_id, moment)
