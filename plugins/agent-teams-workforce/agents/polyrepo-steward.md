@@ -235,7 +235,7 @@ management your tool does.
 | Close open pull requests left in deprecated repos | `deprecated-prs --fix` (also run by `doctor --fix`) |
 | Archive a deprecated repo | automatic: `archive-due` archives it `deprecation.archive_after_days` (`.polyrepo/config.yaml`) days after `deprecated_on`, every day through the project's scheduled `archive-due` job (a launchd agent) and in `doctor --fix`; run `archive-due` (`--dry-run` to see what is due) only to archive one at once |
 | Check a name for a new or renamed repository with the naming command, read-only, and see the kind, tokens, type and placement | `naming <name>` |
-| Rebase `main` on `origin/main` | `rebase <repo…>` or `rebase --all` |
+| Fast-forward each repository's default branch (`origin/HEAD`: `develop` for a product repository, `main` for a tooling one) to its origin copy | `rebase <repo…>` or `rebase --all` |
 | Remove the finished branches, worktrees and GitHub branches of every active repository, the safety net behind agents that clean up after themselves: git decides first whether a branch's work is on `origin/main`, one GitHub call settles up to 25 of the branches git cannot, and open pull requests, unlanded work, uncommitted changes and worktrees used in the last hour are kept and listed | `sweep-branches` (`--dry-run` to judge and list only; `--repo R`, `--space S` limit the run) |
 | Search text across repos, for your own upkeep (never to find where functionality lives) | `grep <pattern>` (rg over every in-scope repo) |
 | Keep the manifest correct | `reconcile --fix` |

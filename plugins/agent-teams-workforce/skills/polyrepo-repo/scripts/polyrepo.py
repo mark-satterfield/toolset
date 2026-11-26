@@ -570,10 +570,10 @@ def main_vs_origin(
     repo: Path,
     branch: str,
 ) -> tuple[str | None, str | None, int | None, int | None]:
-    """Compare the local default branch with its origin copy, as last fetched.
+    """Compare a local branch with its origin copy, as last fetched.
 
     Returns:
-        (main sha, origin/main sha, commits ahead, commits behind); the counts are None
+        (branch sha, origin/branch sha, commits ahead, commits behind); the counts are None
         unless both branches exist.
 
     """
@@ -3438,7 +3438,7 @@ def cmd_search(args: argparse.Namespace, cfg: Config) -> int:
 # --------------------------------------------------------------------------------------------
 # actions: grep, rebase, create, deprecate, agents-sync, templates-check
 
-REBASE_OK = ("up-to-date", "rebased", "fast-forwarded")
+REBASE_OK = ("up-to-date", "fast-forwarded")
 
 
 def _local_repos(
@@ -3555,20 +3555,68 @@ def _rg_matches(stdout: str, rels: dict[str, str]) -> list[dict[str, object]]:
 # rebase ---------------------------------------------------------------------------------------
 
 
-def rebase_one(cfg: Config, r: LocalRepo) -> dict[str, object]:
-    """Fetch origin and bring main up to origin/main, stopping on a dirty tree or a conflict.
+def origin_default_branch(repo: Path) -> str | None:
+    """Name the repository's default branch as origin/HEAD records it, asking GitHub when it is not recorded.
 
     Returns:
-        {repo, status, ...}; status is one of REBASE_OK or the reason it stopped.
+        The branch name (for example `main` or `develop`), or None when origin names none.
+
+    Raises:
+        PolyrepoError: When origin/HEAD is not recorded and `git remote set-head origin --auto` fails.
 
     """
-    b = cfg.default_branch
-    res: dict[str, object] = {"repo": r.name, "path": str(r.path)}
+    ref = git_out(repo, "symbolic-ref", "--short", "-q", "refs/remotes/origin/HEAD")
+    if not ref:
+        cp = git(repo, "remote", "set-head", "origin", "--auto")
+        if cp.returncode != 0:
+            raise PolyrepoError(_last_line(cp))
+        ref = git_out(repo, "symbolic-ref", "--short", "-q", "refs/remotes/origin/HEAD")
+    return ref.removeprefix("origin/") if ref else None
+
+
+def _fetched_default_branch(r: LocalRepo) -> str | dict[str, object]:
+    """Fetch origin and name the repository's default branch.
+
+    Returns:
+        The branch name, or {status, detail} saying why there is none (no origin, fetch failed,
+        origin/HEAD names no branch).
+
+    """
     if not git_out(r.path, "remote", "get-url", "origin"):
-        return {**res, "status": "no-origin"}
+        return {"status": "no-origin"}
     err = fetch_origin(r.path)
     if err:
-        return {**res, "status": "fetch-failed", "detail": err}
+        return {"status": "fetch-failed", "detail": err}
+    try:
+        b = origin_default_branch(r.path)
+    except PolyrepoError as exc:
+        return {"status": "no-default-branch", "detail": str(exc)}
+    return b if b is not None else {"status": "no-default-branch", "detail": "origin/HEAD names no branch"}
+
+
+def rebase_one(r: LocalRepo) -> dict[str, object]:
+    """Fetch origin and fast-forward the default branch (origin/HEAD) to its origin copy.
+
+    Stops on a dirty tree or a branch that has diverged from its origin copy.
+
+    Returns:
+        {repo, path, branch, status, ...}; status is one of REBASE_OK or the reason it stopped.
+
+    """
+    res: dict[str, object] = {"repo": r.name, "path": str(r.path)}
+    found = _fetched_default_branch(r)
+    if isinstance(found, dict):
+        return {**res, **found}
+    b = found
+    res["branch"] = b
+    wt = worktree_on(git, r.path, b)
+    files = _dirty_files(wt) if wt is not None else []
+    if files:
+        return {**res, "worktree": str(wt), "status": "dirty", "files": files}
+    _, _, ahead, behind = main_vs_origin(r.path, b)
+    if ahead and behind:
+        detail = f"{b} has diverged from origin/{b}"
+        return {**res, "ahead": ahead, "behind": behind, "status": "diverged", "detail": detail}
     return _advance_branch(r, b, res)
 
 
@@ -3581,7 +3629,7 @@ def _advance_branch(r: LocalRepo, b: str, res: dict[str, object]) -> dict[str, o
     """
     main, om, a, bh = main_vs_origin(r.path, b)
     if not main or not om:
-        return {**res, "status": "no-main", "detail": f"no {b} or no origin/{b}"}
+        return {**res, "status": "no-branch", "detail": f"no {b} or no origin/{b}"}
     ahead, behind = a or 0, bh or 0
     res.update(ahead=ahead, behind=behind)
     if behind == 0:
@@ -3589,26 +3637,33 @@ def _advance_branch(r: LocalRepo, b: str, res: dict[str, object]) -> dict[str, o
     return _advance_main(r, b, res, (main, om))
 
 
-def _advance_main(r: LocalRepo, b: str, res: dict[str, object], refs: tuple[str, str]) -> dict[str, object]:
-    """Bring a main that is behind origin/main up to it, where it is checked out or not.
-
-    `refs` is (main, origin/main) as commit ids; res carries ahead and behind.
+def _dirty_files(tree: Path) -> list[str]:
+    """List the tracked files with uncommitted changes in a working tree.
 
     Returns:
-        res with the status, and the worktree when main is checked out.
+        The paths git status reports, untracked files excluded.
+
+    """
+    out = git(tree, "status", "--porcelain=v1", "--untracked-files=no").stdout
+    return [ln[3:] for ln in out.splitlines() if ln.strip()]
+
+
+def _advance_main(r: LocalRepo, b: str, res: dict[str, object], refs: tuple[str, str]) -> dict[str, object]:
+    """Bring a branch that is behind its origin copy up to it, where it is checked out or not.
+
+    `refs` is (branch, origin/branch) as commit ids; res carries ahead and behind.
+
+    Returns:
+        res with the status, and the worktree when the branch is checked out.
 
     """
     wt = worktree_on(git, r.path, b)
     if wt is None:
         return _advance_unchecked_out(r, b, res, refs)
     res["worktree"] = str(wt)
-    dirty = git(wt, "status", "--porcelain=v1", "--untracked-files=no").stdout
-    if dirty.strip():
-        return {
-            **res,
-            "status": "dirty",
-            "files": [ln[3:] for ln in dirty.splitlines() if ln.strip()],
-        }
+    files = _dirty_files(wt)
+    if files:
+        return {**res, "status": "dirty", "files": files}
     if res["ahead"] == 0:
         cp = git(wt, "merge", "--ff-only", "--quiet", f"refs/remotes/origin/{b}")
         if cp.returncode != 0:
@@ -3628,7 +3683,7 @@ def _advance_main(r: LocalRepo, b: str, res: dict[str, object], refs: tuple[str,
 
 
 def _advance_unchecked_out(r: LocalRepo, b: str, res: dict[str, object], refs: tuple[str, str]) -> dict[str, object]:
-    """Fast-forward a main no worktree has checked out, unless it has diverged.
+    """Fast-forward a branch no worktree has checked out, unless it has diverged.
 
     Returns:
         res with the status.
@@ -3648,7 +3703,7 @@ def _advance_unchecked_out(r: LocalRepo, b: str, res: dict[str, object], refs: t
 
 
 def cmd_rebase(args: argparse.Namespace, cfg: Config) -> int:
-    """Rebase main on origin/main in the named repos, or all of them.
+    """Fast-forward each named repo's default branch (origin/HEAD) to its origin copy, or every repo's.
 
     Returns:
         0 when every repo ended up to date, else 1.
@@ -3662,7 +3717,7 @@ def cmd_rebase(args: argparse.Namespace, cfg: Config) -> int:
         raise PolyrepoError(msg)
     repos = _local_repos(cfg, None if args.all else args.repos)
     with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
-        results = list(ex.map(lambda r: rebase_one(cfg, r), repos))
+        results = list(ex.map(rebase_one, repos))
     bad = [x for x in results if x["status"] not in REBASE_OK]
 
     def text() -> str:
@@ -3671,7 +3726,8 @@ def cmd_rebase(args: argparse.Namespace, cfg: Config) -> int:
             extra = "; ".join(
                 s for s in (str(x.get("detail") or ""), ", ".join(_strs(x.get("files") or [], "files"))) if s
             )
-            lines.append(f"{x['repo']}: {x['status']}{'  ' + extra if extra else ''}")
+            branch = f" ({x['branch']})" if x.get("branch") else ""
+            lines.append(f"{x['repo']}{branch}: {x['status']}{'  ' + extra if extra else ''}")
         return "\n".join(lines)
 
     emit(args, {"repos": results, "stopped": len(bad)}, text)
@@ -7590,7 +7646,10 @@ def _advance_for_sync(cfg: Config, r: LocalRepo) -> dict[str, object] | None:
     """
     if not git_out(r.path, "remote", "get-url", "origin"):
         return {"status": "skipped", "detail": "no origin"}
-    moved = rebase_one(cfg, r)
+    err = fetch_origin(r.path)
+    if err:
+        return _advance_stop(cfg, {"status": "fetch-failed", "detail": err})
+    moved = _advance_branch(r, cfg.default_branch, {"repo": r.name, "path": str(r.path)})
     if moved["status"] == "dirty" and moved.get("ahead") == 0 and _ff_past_dirty_files(r, cfg.default_branch):
         return None
     return _advance_stop(cfg, moved)
@@ -10860,7 +10919,7 @@ def _add_repo_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> No
     """Add the commands that change repos: rebase, create, deprecate, clone and rename."""
     s = add(
         "rebase",
-        "rebase main on origin/main after a fetch",
+        "fast-forward each repo's default branch (origin/HEAD) to its origin copy after a fetch",
     )
     s.add_argument("repos", nargs="*", help="repo names or paths")
     s.add_argument("--all", action="store_true", help="every repo on disk")
