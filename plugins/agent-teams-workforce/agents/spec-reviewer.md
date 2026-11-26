@@ -120,6 +120,10 @@ documents and the TRD state it.
   it specifies an addition to, or leaves out an `addition` entry it specifies no addition to, is
   a finding under I7: the correction makes its list name exactly the `addition` entries that
   document specifies no addition to.
+- A fact an approved document (an arc42 view, a constraint, standard or policy, or the detailed
+  design) states about what the Story builds, an implementation standard included, that the
+  documents leave out is a finding under the criterion it falls under: the correction states it
+  as that document records it, with its path and heading.
 - A detail the Story needs that no approved document states is left out of the documents. Its
   absence is never a finding: never write a finding asking an author or the solutions architect
   to add such a detail.

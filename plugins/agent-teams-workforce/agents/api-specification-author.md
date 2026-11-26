@@ -80,10 +80,11 @@ changes nothing, the Epic's own work, such as the wording of a page, from the TR
 For an entry whose scope is `full`, specify all the work that brings the build up to the
 entry's approved architecture, as its documents state it.
 
-The architecture and design documents hold every detail the spec states: the arc42 views and
-the detailed design under `detailed/` were decided during architecture. Include every fact those
-documents state about what the Story builds, as they record it, or link to it by path and
-heading, and contradict none of it. Leave out every detail they do not state and write nothing
+The architecture and design documents hold every detail the spec states: the arc42 views, the
+constraints, standards and policies that bind what the Story builds, and the detailed design under
+`detailed/` were decided during architecture. Include every fact those documents state about what
+the Story builds, the implementation standards they state included, as they record it, or link to
+it by path and heading, and contradict none of it. Leave out every detail they do not state and write nothing
 about it. Never write a gap, an open item, an open question, a TBD, or a list or table of
 details the build decides, into any document. Your repository context file
 (`spec-context.schema.json`) names what the Story builds: `items`, `stacks`, `buildScope` and

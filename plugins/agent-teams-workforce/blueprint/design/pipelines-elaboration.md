@@ -689,7 +689,7 @@ flowchart TD
     each --> story["Spec and its Story created together - one Story bead, one repository, under the Epic"]
     story --> dec["Task decomposition, for example task-decomposer, splits the Story into Tasks"]
     dec --> size["Each Task is one coherent change in one repository that one build run can make and test"]
-    size --> content["Each Task states what it builds with the matrix ids for the stack, components and shared capabilities, the names and decisions recorded upstream or pointers to them, and links to its Spec and to the full architecture and design of its component; never how to code it"]
+    size --> content["Each Task states what it builds with the matrix ids for the stack, components and shared capabilities, the names and decisions recorded upstream or pointers to them, and links to its Spec and to the full architecture and design of its component. It may restate any fact the architecture, design or Spec states, implementation standards included, citing the Spec section; it states no implementation choice they do not state and no description of the code a repository holds today"]
     content --> order["Build dependencies between Tasks found from the matrix: a Task depends on another that builds an entry it uses, such as a stack, a library or an SSM parameter. Recorded as dependency edges in beads"]
     order --> score["Tasks scored and ordered"]
     score --> write["Story and Tasks written to beads. The matrix records neither"]

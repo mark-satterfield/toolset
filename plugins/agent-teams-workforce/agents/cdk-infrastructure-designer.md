@@ -79,7 +79,8 @@ provisioning intent:
 - Read the documents and the matrix ids given (`atw-matrix node <id>` for each, with its stack,
   repository, SSM parameters and documents) and express the infrastructure as recorded: the
   resources, their stacks, their names, the values stacks share and their sizing. Every stack and
-  resource carries the name the architecture, the matrix or the spec gives it. A detail none of
+  resource carries the name the architecture, the matrix or the spec gives it, and every setting
+  they state for it, the constraints and standards of the architecture included. A detail none of
   them records stays out of the intent: the coding agent decides it.
 - A value known only at deploy time (account, region, environment) is resolved at deploy time and
   is not part of the intent.
