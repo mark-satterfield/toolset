@@ -60,7 +60,6 @@ from beadcontracts import (
     WrittenTask,
 )
 from beadgraph import (
-    SCOPE_JUDGING,
     Bead,
     Graph,
     Writer,
@@ -1290,7 +1289,7 @@ def _judged_hash(title: str, text: str, priority: JsonValue) -> str:
         "issue_type": "task",
         "priority": priority,
     })
-    return fingerprints([record], SCOPE_JUDGING).get("task", "")
+    return fingerprints([record]).get("task", "")
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)

@@ -70,10 +70,10 @@ carries `error`).
 
 | Command | Answers |
 | --- | --- |
-| `contract <id>` | The whole build contract a Task carries, plus resolved criteria, the gate keys, and what is `missing`. `bead` in the result is the build composite's `bead` argument — id, title, description, the contract and the Task's `story` (id, title), whose branch the Task is built on — passed as-is. |
+| `contract <id>` | The whole build contract a Task carries, plus resolved criteria and what is `missing`. `bead` in the result is the build composite's `bead` argument — id, title, description, the contract and the Task's `story` (id, title), whose branch the Task is built on — passed as-is. |
 | `criteria <id>` | The acceptance criteria and, critically, `sourceId` / `sourceField` / `searched` — WHERE each was found and everywhere that was looked. |
-| `fingerprint <id>` | The content fingerprint, the stored readiness fingerprint (the schema's `CONTENT_HASH_KEY`), and whether they agree. `--scope` picks one of the schema's `HashScope` values; `--explain` prints the exact object hashed. |
-| `fingerprint-batch [id ...]` | The same answer, in either `--scope`, for MANY beads in one invocation. With `--records -` it fingerprints a sweep the caller already holds, costing no tracker call; otherwise it makes ONE `bd list` call, never one per bead. |
+| `fingerprint <id>` | The content fingerprint; `--explain` prints the exact object hashed. |
+| `fingerprint-batch [id ...]` | The same answer for MANY beads in one invocation. With `--records -` it fingerprints a sweep the caller already holds, costing no tracker call; otherwise it makes ONE `bd list` call, never one per bead. |
 | `ancestors <id>` | The parent chain, nearest first, cycle-safe. |
 | `record <id>` | The normalized record and the field names it ACTUALLY carries. |
 | `metadata get <id> [key ...]` | Metadata, split by owning lane, with unrecognized keys named rather than hidden. |
@@ -96,7 +96,7 @@ atw-bd list --json | python3 "${CLAUDE_PLUGIN_ROOT}/skills/beads-contract/script
 ```
 
 Stdout carries `fingerprints` — a plain `{id: fingerprint}` map — alongside the full per-bead
-`results` (`found`, `fingerprint`, `stored`, `fresh`), `missing`, and `trackerCalls`. Naming ids
+`results` (`found`, `fingerprint`), `missing`, and `trackerCalls`. Naming ids
 as arguments narrows it to those beads; naming none fingerprints every record supplied.
 
 A caller holding `bd list` records hashes those; a re-fetch inside this script would hash `bd show`
@@ -167,13 +167,12 @@ from the installed plugin through its `beadmeta.py`.
 
 Which matrix entries a Task builds is its `builds_entries` key, and the entries it only adds to
 (another Epic's Task builds them) its `adds_to_entries` key, both elaboration-lane keys outside
-both fingerprints; `matrix_elements` also names the Task's stack and shared capabilities and is
+the fingerprint; `matrix_elements` also names the Task's stack and shared capabilities and is
 not the ownership record (the `matrix` skill, "Who builds an entry").
 
 `bd` metadata is flat `key=value` TEXT, so **every value is a string**: lists and objects are
-compact JSON. The build-contract keys are inside the READINESS fingerprint and outside the
-JUDGING one; every other group is outside both, which is what lets each consumer store its own
-verdict without invalidating it.
+compact JSON. No metadata key is inside the fingerprint, which is what lets each consumer store
+its own verdict without invalidating it.
 
 **The schema's `UNKNOWN` literal is not `[]`, and the difference is the whole point.** For a
 contract key whose kind (the schema's `ContractKind`) admits it, `UNKNOWN` means nobody ruled and
@@ -189,36 +188,24 @@ reader, so take key names from the schema.
 **Always `--set-metadata` (merges), never `--metadata` (replaces the whole object and drops every
 key the write did not name).** `metadata set` uses the right one and reads back to verify.
 
-## The content fingerprints
+## The content fingerprint
 
-The staleness watermark, in TWO SCOPES. A fingerprint answers "has the thing this consumer reads
-changed?", and two consumers read different things, so one fingerprint cannot answer for both.
-Both scopes have ONE implementation, `content_hash` in `scripts/beads-contract.py`;
-`fingerprint <id> --scope <scope> --explain` prints the exact object hashed. Do not reproduce
-either recipe in prose, in `jq`, or in a second language.
+The staleness watermark. A fingerprint answers "has the thing this consumer reads changed?". It
+has ONE implementation, `content_hash` in `scripts/beads-contract.py`;
+`fingerprint <id> --explain` prints the exact object hashed. Do not reproduce the recipe in
+prose, in `jq`, or in a second language.
 
-The scopes are the schema's `HashScope` values, and which record fields each covers is the
-schema's `x-field-sets` (`CONTENT_HASH_FIELDS` / `CONTENT_HASH_PRESENT` for readiness,
-`JUDGING_HASH_FIELDS` / `JUDGING_HASH_PRESENT` for judging); the readiness scope also covers the
-build-contract keys (`CONTRACT_HASHED_WHEN_PRESENT` only on a bead that carries them). The
-readiness scope is what `task-ready` rules on, stored under the schema's `CONTENT_HASH_KEY`. The
-judging scope is what a WSJF judging session is handed and what the SEQUENCING assessment reads,
-each stored under its own key in the schema's WSJF and sequencing groups. **Pass the scope that
-matches the key you store the answer under**, or you will compare a watermark against a
-fingerprint of something else.
+Which record fields it covers is the schema's `x-field-sets` (`JUDGING_HASH_FIELDS` /
+`JUDGING_HASH_PRESENT`). It is what a WSJF judging session is handed and what the SEQUENCING
+assessment reads, each stored under its own key in the schema's WSJF and sequencing groups.
 
 What matters to a caller:
 
-- Rehoming a Task or changing the spec it builds against makes it stale for readiness, because it
-  changes what a reviewer would rule on; it does not change the judging fingerprint, because the
-  build contract has no bearing on business value, time criticality or size.
-- A field set's key outside its `*_PRESENT` set hashes as null, so writing a label, an edge, a
-  score or a verdict never changes the fingerprint, and no metadata key outside the build
-  contract is hashed.
+- A field set's key outside `JUDGING_HASH_PRESENT` hashes as null, so writing a label, an edge,
+  a score or a verdict never changes the fingerprint, and no metadata key is hashed.
 - Timestamps, status and comments are outside it, so storing a verdict never invalidates it.
 - Criteria in the Task's OWN description ARE covered, because `description` is. Criteria on a
-  PARENT are NOT — the fingerprint is over this bead's own record. Editing a parent's criteria
-  does not make this Task stale; that is a real limitation, and it is about where the prose sits.
+  PARENT are NOT — the fingerprint is over this bead's own record.
 
 Anything that fingerprints beads calls this script rather than carrying its own recipe.
 `fingerprint-batch` takes a `bd list` sweep on stdin and answers for every bead in one
@@ -231,8 +218,7 @@ That is the whole mechanism; there is no separate parent index and no dependency
 `parent` is absent on a bead with no parent.
 
 **A Story never gates a Task.** A Story is a roll-up parent for reporting and tracking; it is
-never a dispatch precondition, and a Task with no parent is workable. Missing lineage is a note on
-a verdict, never the verdict.
+never a dispatch precondition.
 
 ## Bug rules — standing, not negotiable
 
@@ -243,7 +229,7 @@ a verdict, never the verdict.
 - **A bug is triaged by a PERSON** into an Epic, a Task, or a closure. That is a judgment call, not
   a routing rule, and no agent makes it. There is no triage composite to hand it to.
 
-An agent that sends a bug to `task-ready`, a decomposition pass, or a build lane is itself the
+An agent that sends a bug to a decomposition pass or a build lane is itself the
 defect. Report it and stop.
 
 ## Rules for the agent using this skill

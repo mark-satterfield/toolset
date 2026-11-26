@@ -31,7 +31,7 @@
     "task-to-deploy": {
       "runner": "orchestrator",
       "openingKind": "task",
-      "sets": ["orchestrated", "target-repo", "code-build", "repo-required", "design-aware"],
+      "sets": ["orchestrated", "target-repo", "code-build", "design-aware"],
       "phases": [
         {"id": "workspace", "title": "Workspace"},
         {"id": "infra-intent", "title": "Infra Intent"},

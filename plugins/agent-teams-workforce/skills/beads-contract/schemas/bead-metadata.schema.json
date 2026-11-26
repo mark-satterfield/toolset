@@ -13,10 +13,6 @@
       "doc": "The build contract a Task carries."
     },
     {
-      "name": "GATE_KEYS",
-      "doc": "Keys the readiness gate (task-ready) writes."
-    },
-    {
       "name": "BUILD_LIFECYCLE_KEYS",
       "doc": "Keys the build lane writes on a Task."
     },
@@ -82,37 +78,6 @@
     }
   ],
   "x-field-sets": [
-    {
-      "name": "CONTENT_HASH_FIELDS",
-      "kind": "tuple",
-      "values": [
-        "acceptance",
-        "acceptance_criteria",
-        "dependencies",
-        "deps",
-        "description",
-        "design",
-        "issue_type",
-        "labels",
-        "priority",
-        "title",
-        "type"
-      ],
-      "doc": "Record keys the readiness fingerprint is taken over; keys outside CONTENT_HASH_PRESENT hash as null."
-    },
-    {
-      "name": "CONTENT_HASH_PRESENT",
-      "kind": "frozenset",
-      "values": [
-        "acceptance_criteria",
-        "description",
-        "design",
-        "issue_type",
-        "priority",
-        "title"
-      ],
-      "doc": "Readiness fingerprint keys hashed with their value."
-    },
     {
       "name": "JUDGING_HASH_FIELDS",
       "kind": "tuple",
@@ -215,28 +180,6 @@
         ]
       }
     },
-    "HashScope": {
-      "type": "string",
-      "enum": [
-        "readiness",
-        "judging"
-      ],
-      "description": "readiness hashes the record content and the build contract; judging hashes only title, description, issue_type and priority.",
-      "x-python": {
-        "literal": "HashScope",
-        "tuple": "SCOPES",
-        "constants": [
-          [
-            "SCOPE_READINESS",
-            "readiness"
-          ],
-          [
-            "SCOPE_JUDGING",
-            "judging"
-          ]
-        ]
-      }
-    },
     "CdsDesignSource": {
       "type": "string",
       "enum": [
@@ -259,27 +202,6 @@
           [
             "CDS_DESIGN_SOURCE_NONE",
             "none"
-          ]
-        ]
-      }
-    },
-    "ReviewStatus": {
-      "type": "string",
-      "enum": [
-        "COMPLETE",
-        "INCOMPLETE"
-      ],
-      "x-python": {
-        "literal": "ReviewStatus",
-        "tuple": "REVIEW_STATUSES",
-        "constants": [
-          [
-            "REVIEW_COMPLETE",
-            "COMPLETE"
-          ],
-          [
-            "REVIEW_INCOMPLETE",
-            "INCOMPLETE"
           ]
         ]
       }
@@ -570,7 +492,7 @@
     "build_prerequisites": {
       "$ref": "#/$defs/JsonObjectText",
       "x-groups": ["CONTRACT_KEYS"],
-      "x-contract": {"argument": "buildPrerequisites", "kind": "object-or-unknown", "hashedWhenPresent": true},
+      "x-contract": {"argument": "buildPrerequisites", "kind": "object-or-unknown"},
       "description": "JSON object with producers: actual Task ids, parent Story ids, requiredStage built, published or deployed, consumed output and absolute evidence artifact paths. The build selector validates actual producer stages before dispatch. Missing on older Tasks means unknown, not ready evidence."
     },
     "decision_ids": {
@@ -617,8 +539,7 @@
       ],
       "x-contract": {
         "argument": "cdsDesignSource",
-        "kind": "text",
-        "hashedWhenPresent": true
+        "kind": "text"
       },
       "description": "On a web-ui Task: bundle builds from and is audited against the supplied cds bundle; cds is designed with and audited against the live CDS design system; none gets no cds design step or audit."
     },
@@ -629,8 +550,7 @@
       ],
       "x-contract": {
         "argument": "cdsArtifact",
-        "kind": "object-or-unknown",
-        "hashedWhenPresent": true
+        "kind": "object-or-unknown"
       },
       "description": "JSON object {kind, slug} naming the Page, Shell or View a bundle or cds web-ui Task builds, as a bundle.json names it."
     },
@@ -641,8 +561,7 @@
       ],
       "x-contract": {
         "argument": "cdsBundlePath",
-        "kind": "text",
-        "hashedWhenPresent": true
+        "kind": "text"
       },
       "description": "On a bundle web-ui Task only: the absolute path of the supplied single-artifact cds bundle."
     },
@@ -653,40 +572,9 @@
       ],
       "x-contract": {
         "argument": "cdsBuildSpecs",
-        "kind": "list",
-        "hashedWhenPresent": true
+        "kind": "list"
       },
       "description": "On a bundle web-ui Task: JSON array of absolute spec/build-spec.md paths, each with #<Section ID> when only some Sections are built."
-    },
-    "review_status": {
-      "$ref": "#/$defs/ReviewStatus",
-      "x-groups": [
-        "GATE_KEYS"
-      ]
-    },
-    "review_missing": {
-      "type": "string",
-      "x-groups": [
-        "GATE_KEYS"
-      ],
-      "description": "Required non-empty when review_status is INCOMPLETE; empty when COMPLETE."
-    },
-    "reviewed_at": {
-      "$ref": "#/$defs/IsoTime",
-      "x-groups": [
-        "GATE_KEYS"
-      ]
-    },
-    "ready_content_hash": {
-      "type": "string",
-      "pattern": "^[0-9a-f]{16}$",
-      "x-groups": [
-        "GATE_KEYS"
-      ],
-      "x-aliases": [
-        "CONTENT_HASH_KEY"
-      ],
-      "description": "The readiness fingerprint the stored verdict was judged over."
     },
     "build_state": {
       "anyOf": [
@@ -1147,48 +1035,5 @@
         "SEQUENCING_KEYS"
       ]
     }
-  },
-  "allOf": [
-    {
-      "if": {
-        "properties": {
-          "review_status": {
-            "const": "INCOMPLETE"
-          }
-        },
-        "required": [
-          "review_status"
-        ]
-      },
-      "then": {
-        "properties": {
-          "review_missing": {
-            "minLength": 1
-          }
-        },
-        "required": [
-          "review_missing"
-        ]
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "review_status": {
-            "const": "COMPLETE"
-          }
-        },
-        "required": [
-          "review_status"
-        ]
-      },
-      "then": {
-        "properties": {
-          "review_missing": {
-            "maxLength": 0
-          }
-        }
-      }
-    }
-  ]
+  }
 }

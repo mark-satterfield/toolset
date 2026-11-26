@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 #: SHA-256 of the schema and composites.json this module was generated from.
-SOURCE_SHA256: Final[str] = "9f574d32363e2d20f902960ea10e2556c0d62ebc04bc871b9a00fda19a4ef5f3"
+SOURCE_SHA256: Final[str] = "33ea7f4a8eeec7ec9ac46b2b25e9d6276a16935bb36241a4651ca62981b45849"
 
 #: Every composite id, active then retired.
 type CompositeId = Literal[
@@ -98,7 +98,6 @@ type CompositeSet = Literal[
     "orchestrated",
     "target-repo",
     "code-build",
-    "repo-required",
     "design-aware",
     "elaboration",
     "story",
@@ -169,7 +168,7 @@ COMPOSITES: Final[Mapping[CompositeId, CompositeSpec]] = MappingProxyType({
             {"id": "documentation", "title": "Documentation"},
             {"id": "commit", "title": "Commit"},
         ),
-        "sets": frozenset({"orchestrated", "target-repo", "code-build", "repo-required", "design-aware"}),
+        "sets": frozenset({"orchestrated", "target-repo", "code-build", "design-aware"}),
         "openingKind": "task",
     },
     STORY_DEPLOY: {
@@ -252,8 +251,6 @@ ORCHESTRATED: Final[frozenset[CompositeId]] = frozenset({
 TARGET_REPO: Final[frozenset[CompositeId]] = frozenset({TASK_TO_DEPLOY})
 #: The code-build set.
 CODE_BUILD: Final[frozenset[CompositeId]] = frozenset({TASK_TO_DEPLOY})
-#: The repo-required set.
-REPO_REQUIRED: Final[frozenset[CompositeId]] = frozenset({TASK_TO_DEPLOY})
 #: The design-aware set.
 DESIGN_AWARE: Final[frozenset[CompositeId]] = frozenset({TASK_TO_DEPLOY})
 #: The story set.

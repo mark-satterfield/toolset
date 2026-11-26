@@ -221,6 +221,10 @@ Notes on the diagram:
   dependencies, because it puts the most value per effort first.
 - A Task is ready when the Tasks it depends on (beads dependency edges) are closed, and ready Tasks
   are taken in WSJF order, because the edges carry build order and WSJF orders what is free to run.
+- The elaboration lane makes sure a Task is ready; the build lane assumes every Task it receives
+  is ready. The driver re-verifies nothing elaboration guarantees (that elaboration wrote the
+  Task, its acceptance criteria, spec, parent Story and repository, or that its spec still
+  matches), because a second check of the same fact only holds back work elaboration finished.
 - A bead of any kind not routed to a pipeline is skipped with the reason logged and left for a
   person, as a Bug is, and the routing table is data that accepts new kinds, because no closed list
   of today's kinds is kept and no pipeline runs work it was not designed for.

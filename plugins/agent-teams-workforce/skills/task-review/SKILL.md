@@ -67,7 +67,7 @@ dimensions are blocking at every class. It calibrates how much Acceptance Criter
 (see that dimension), and it tells whoever picks the item up what they are walking into.
 
 Consumed by: this skill's own Acceptance Criteria calibration, and the human reading the
-review comment `task-ready` posts to the tracker.
+review.
 
 ## Step 3 — Completeness Assessment
 
@@ -155,8 +155,8 @@ Rules:
   State what would improve it.
 - No: Too vague to estimate. Sizing would be a guess. State what is needed.
 
-Consumed by: `skills/task-ready` — a COMPLETE verdict is what makes the item workable, and
-it is stored on the issue as `review_status`.
+Consumed by: the verdict — a COMPLETE verdict says the item carries what someone needs in order
+to work it.
 
 ### Consistency rule — sizing and the verdict must agree
 

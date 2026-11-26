@@ -326,7 +326,7 @@ def assess_context(graph: Graph, matrix: Matrix, epic: str, vault: Path) -> Epic
     view: EpicView = epic_view(matrix, epic)
     related: list[RelatedPrd] = _related(matrix, vault, related_view(matrix, epic)["related"])
     similar: list[Match] = _similar(matrix, bead, view)
-    prints: dict[str, str] = beadgraph.fingerprints(graph.records, beadgraph.SCOPE_JUDGING)
+    prints: dict[str, str] = beadgraph.fingerprints(graph.records)
     standing: list[StandingEdge] = standing_edges(graph, epic)
     withdrawn: list[EdgeWithdrawal] = withdrawal_history(graph, epic)
     owned: int = sum(1 for edge in standing if edge["owned"])
@@ -417,7 +417,7 @@ def task_context(graph: Graph, matrix: Matrix, tasks: Sequence[TaskBead], task: 
         for stack in stack_ids
     ]
     others: set[str] = {row["task"] for stack in stacks for row in stack["work"]["tasks"]} - {task}
-    prints: dict[str, str] = beadgraph.fingerprints(graph.records, beadgraph.SCOPE_JUDGING)
+    prints: dict[str, str] = beadgraph.fingerprints(graph.records)
     standing: list[StandingEdge] = standing_edges(graph, task, "task")
     withdrawn: list[EdgeWithdrawal] = withdrawal_history(graph, task, "task")
     owned: int = sum(1 for edge in standing if edge["owned"])

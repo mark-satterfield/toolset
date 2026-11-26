@@ -398,7 +398,7 @@ def assess_plan(
         b for b in graph.of_kind(level) if not b.closed and not (level == "task" and b.metadata.get(KEY_ELAB_KEY))
     ]
     cutoff = _instant(since) if since is not None else None
-    prints = beadgraph.fingerprints(graph.records, beadgraph.SCOPE_JUDGING)
+    prints = beadgraph.fingerprints(graph.records)
 
     def assessed(bead: Bead) -> bool:
         at: datetime | None

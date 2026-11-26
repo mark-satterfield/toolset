@@ -42,9 +42,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "beads-c
 
 # isort: split
 
-import bead_metadata
 import beads_contract
-from bead_metadata import KEY_SEQ_OWNED_BLOCKERS, HashScope
+from bead_metadata import KEY_SEQ_OWNED_BLOCKERS
 from beadcontracts import PlannedWrite
 from contracts import JsonObject, JsonValue
 from orchestrator.core import handback_contract
@@ -952,14 +951,8 @@ class Writer:
         write_metadata(bead_id, pairs, self.repo)
 
 
-#: The fingerprint scopes, re-exported from `bead_metadata` for callers that name them here.
-SCOPE_JUDGING: Final[HashScope] = bead_metadata.SCOPE_JUDGING
-SCOPE_READINESS: Final[HashScope] = bead_metadata.SCOPE_READINESS
-_SCOPE_ERROR: Final[str] = f"The fingerprint scope must be one of {', '.join(bead_metadata.SCOPES)}"
-
-
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def fingerprints(records: list[JsonObject], scope: HashScope = SCOPE_READINESS) -> dict[str, str]:
+def fingerprints(records: list[JsonObject]) -> dict[str, str]:
     """Compute every record fingerprint through the shared contract.
 
     The records are handed over rather than re-fetched, so the fingerprint is taken over
@@ -967,26 +960,19 @@ def fingerprints(records: list[JsonObject], scope: HashScope = SCOPE_READINESS) 
 
     Args:
         records: Tracker records as `bd list --json` returned them, descriptions included.
-        scope: Which fingerprint — `readiness` or `judging`. A caller must pass the scope
-            matching the key it stores the answer under, or it will compare a watermark
-            with a fingerprint of something else.
 
     Returns:
         Bead id -> content fingerprint.
 
     Raises:
         TypeError: An argument violates the declared input contract.
-        ValueError: `scope` is not one of the beads-contract fingerprint scopes.
 
     """
-    if not (isinstance(records, list)) or not (isinstance(scope, str)):
+    if not (isinstance(records, list)):
         raise TypeError(_ARGUMENT_ERROR)
-    if scope not in bead_metadata.SCOPES:
-        raise ValueError(_SCOPE_ERROR)
     latest: dict[str, dict[str, contracts.JsonValue]] = {str(record.get("id") or ""): record for record in records}
     return {
-        bead_id: beads_contract.fingerprint_of(bead_id, record, scope=scope)["fingerprint"]
-        for bead_id, record in latest.items()
+        bead_id: beads_contract.fingerprint_of(bead_id, record)["fingerprint"] for bead_id, record in latest.items()
     }
 
 

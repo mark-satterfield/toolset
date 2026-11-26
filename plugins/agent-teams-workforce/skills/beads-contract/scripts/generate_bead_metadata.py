@@ -92,7 +92,6 @@ class ContractField:
     argument: str
     kind: str
     reference: str
-    hashed_when_present: bool
 
 
 @dataclass(frozen=True)
@@ -258,15 +257,10 @@ def _key(key: str, definition: dict[str, object]) -> Key:
         if kind not in _KINDS_TO_TYPE:
             msg: str = f"{where}: unknown contract kind {kind!r}"
             raise SchemaError(msg)
-        hashed: object = spec.get("hashedWhenPresent", False)
-        if not isinstance(hashed, bool):
-            msg = f"{where}: hashedWhenPresent must be a boolean"
-            raise SchemaError(msg)
         contract = ContractField(
             argument=_str(spec["argument"], where),
             kind=kind,
             reference=_str(spec.get("reference", ""), where),
-            hashed_when_present=hashed,
         )
     artifact: tuple[str, str] | None = _pair(definition["x-artifact"], where) if "x-artifact" in definition else None
     return Key(
@@ -514,14 +508,6 @@ def _render_contract(lines: list[str], schema: Schema) -> None:
         ],
         "(",
         ")",
-    )
-    lines.append("#: Contract keys the readiness fingerprint covers only on a bead that carries them.")
-    _collection(
-        lines,
-        "CONTRACT_HASHED_WHEN_PRESENT: Final[frozenset[str]] = frozenset(",
-        [constant_name("KEY_", key.key) for key, field in contract_keys if field.hashed_when_present],
-        "{",
-        "})",
     )
     _render_references(lines, schema)
 

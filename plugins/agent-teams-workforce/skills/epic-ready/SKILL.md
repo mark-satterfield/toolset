@@ -7,10 +7,8 @@ description: Readiness gate for one EPIC — decides whether it is dispatchable 
 
 Decide whether ONE Epic can be dispatched to elaboration. That is the whole job.
 
-**This is not `task-ready`, and the two judgments are different on purpose.** `task-ready`
-rules on a Task about to be BUILT: it demands a verifiable pass condition, because the Red
-phase encodes acceptance criteria into failing tests, and it stores a WSJF score so the
-build lane can sort. An Epic is a container paired with a PRD. It carries no acceptance
+**An Epic is not a Task, and this judgment demands nothing a Task carries.** An Epic is a
+container paired with a PRD. It carries no acceptance
 criteria, it carries no repository — a PRD may span several, and which repositories it
 lands in is ruled by `repo-scoping` during the run this gate is deciding whether to start.
 A gate that demands either of those off an Epic rules not-ready forever, on every Epic,

@@ -48,7 +48,7 @@ against the rubric's rungs, and, only when `sizedFromTasks` is false, the size e
 Read no other Epic's PRD and no other Epic's values. Each rationale cites the PRD.
 
 **The Tasks of an Epic.** Size exactly the items the brief lists. Each Task's content is its
-bead, read with the `fingerprint-batch ... --scope judging --explain` command the brief gives:
+bead, read with the `fingerprint-batch ... --explain` command the brief gives:
 `results.<id>.hashed` is exactly the content a size is recorded against. Judge `jobSize` with
 `sizeLow`, `sizeHigh` and `sizeConfidence` for each, as the rubric's "At Task level" says.
 
@@ -70,9 +70,9 @@ authority on how work is stored on a bead. Never hand-roll `jq` against `bd`, ne
 field exists because a document said so, and never restate one of its recipes.
 
 - You write nothing to a bead.
-- What you judge is the content of the JUDGING fingerprint scope (`beads-contract.py fingerprint <id> --scope judging`
-  reports it): the fields the schema lists for that scope, which are the material you are
-  handed, and nothing else.
+- What you judge is the content the fingerprint covers (`beads-contract.py fingerprint <id> --explain`
+  reports it): the fields the schema lists for it, which are the material you are handed, and
+  nothing else.
 
 ## Operating Rules
 

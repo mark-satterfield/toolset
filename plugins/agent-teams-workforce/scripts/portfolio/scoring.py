@@ -51,7 +51,6 @@ from bead_metadata import (
     KEY_WSJF_SIZE_LOW,
     KEY_WSJF_TC,
     KEY_WSJF_UBV,
-    SCOPE_JUDGING,
 )
 from beadgraph import Bead, Graph, Writer, fingerprints
 from contracts import JsonObject, JsonValue
@@ -321,7 +320,7 @@ def plan(
         or not (isinstance(only, list) or only is None)
     ):
         raise TypeError(_ARGUMENT_ERROR)
-    prints: dict[str, str] = fingerprints(graph.records, SCOPE_JUDGING)
+    prints: dict[str, str] = fingerprints(graph.records)
     epics: list[beadgraph.Bead] = _open(graph, "epic")
     tasks: list[beadgraph.Bead] = _open(graph, "task")
     ids: set[str] = {e.id for e in epics} | {t.id for t in tasks}

@@ -11,8 +11,8 @@ A write to a bead filed in a fleet repository's own database runs in that databa
 because the one-way fleet sync copies the fleet copy over the central one.
 
 Usage:
-  beads-contract.py fingerprint <id> [--explain] [--scope readiness|judging]
-  beads-contract.py fingerprint-batch [id ...] [--explain] [--scope readiness|judging]
+  beads-contract.py fingerprint <id> [--explain]
+  beads-contract.py fingerprint-batch [id ...] [--explain]
   beads-contract.py criteria <id>
   beads-contract.py contract <id>
   beads-contract.py ancestors <id>
@@ -62,14 +62,9 @@ from bead_metadata import (
     BUILD_LIFECYCLE_KEYS,
     CDS_AUDIT_KEYS,
     CDS_AUDIT_VERDICTS,
-    CONTENT_HASH_FIELDS,
-    CONTENT_HASH_KEY,
     CONTENT_HASH_LENGTH,
-    CONTENT_HASH_PRESENT,
-    CONTRACT_HASHED_WHEN_PRESENT,
     CONTRACT_KEYS,
     CONTRACT_SCHEMA,
-    GATE_KEYS,
     JUDGING_HASH_FIELDS,
     JUDGING_HASH_PRESENT,
     KEY_ACCEPTANCE_CRITERIA,
@@ -87,9 +82,6 @@ from bead_metadata import (
     KNOWN_KEYS,
     LANE_KEYS,
     REPO_REFERENCE,
-    SCOPE_JUDGING,
-    SCOPE_READINESS,
-    SCOPES,
     SEQUENCING_KEYS,
     SOURCE_ACCEPTANCE,
     SOURCE_DESCRIPTION,
@@ -100,7 +92,6 @@ from bead_metadata import (
     WSJF_KEYS,
     BuildContract,
     Criteria,
-    HashScope,
     JsonObject,
     JsonValue,
 )
@@ -135,11 +126,8 @@ class Fingerprint(TypedDict):
     """The exact fingerprint record emitted by this producer."""
 
     id: str
-    scope: str
     found: bool
     fingerprint: str
-    stored: str
-    fresh: bool
     hashed: NotRequired[JsonObject]
     note: NotRequired[str]
 
@@ -478,15 +466,14 @@ def fleet_homes(rows: JsonValue, central: str) -> dict[str, str]:
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def content_hash(rec: JsonObject, scope: str = SCOPE_READINESS) -> str:
-    """Return a bead record's content fingerprint for a scope.
+def content_hash(rec: JsonObject) -> str:
+    """Return a bead record's content fingerprint.
 
     The first sixteen hex characters of the SHA-256 of `fingerprint_payload` serialized
     with sorted keys, two-space indent and a trailing newline.
 
     Args:
         rec: One bead record, as `bd show --json` or `bd list --json` returned it.
-        scope: `readiness` or `judging`.
 
     Returns:
         The fingerprint, or "" for a record with no content at all.
@@ -495,45 +482,34 @@ def content_hash(rec: JsonObject, scope: str = SCOPE_READINESS) -> str:
         TypeError: An argument violates the declared input contract.
 
     """
-    if not (isinstance(rec, dict)) or not (isinstance(scope, str)):
+    if not (isinstance(rec, dict)):
         argument_error: str = "content_hash: arguments do not satisfy the declared input contract"
         raise TypeError(argument_error)
     if not rec:
         return ""
-    payload: dict[str, JsonValue] = fingerprint_payload(rec, scope)
+    payload: dict[str, JsonValue] = fingerprint_payload(rec)
     text: str = json.dumps(payload, sort_keys=True, indent=2, ensure_ascii=False) + "\n"
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:CONTENT_HASH_LENGTH]
 
 
 @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-def fingerprint_payload(rec: JsonObject, scope: str = SCOPE_READINESS) -> JsonObject:
+def fingerprint_payload(rec: JsonObject) -> JsonObject:
     """Return the object a fingerprint is taken over.
 
     Args:
         rec: One bead record.
-        scope: `judging`, or anything else for `readiness`.
 
     Returns:
-        The scope's record-level keys, nulls included, plus — for `readiness` — a
-        `metadata` member holding the build contract keys.
+        The fingerprinted record-level keys, nulls included.
 
     Raises:
         TypeError: An argument violates the declared input contract.
 
     """
-    if not (isinstance(rec, dict)) or not (isinstance(scope, str)):
+    if not (isinstance(rec, dict)):
         argument_error: str = "fingerprint_payload: arguments do not satisfy the declared input contract"
         raise TypeError(argument_error)
-    if scope == SCOPE_JUDGING:
-        return {key: (rec.get(key) if key in JUDGING_HASH_PRESENT else None) for key in JUDGING_HASH_FIELDS}
-    metadata: dict[str, JsonValue] = metadata_of(rec)
-    payload: JsonObject = {key: (rec.get(key) if key in CONTENT_HASH_PRESENT else None) for key in CONTENT_HASH_FIELDS}
-    payload["metadata"] = {
-        source: metadata.get(source)
-        for source, _, _ in CONTRACT_SCHEMA
-        if source not in CONTRACT_HASHED_WHEN_PRESENT or source in metadata
-    }
-    return payload
+    return {key: (rec.get(key) if key in JUDGING_HASH_PRESENT else None) for key in JUDGING_HASH_FIELDS}
 
 
 #: A markdown heading or labelled line that opens an acceptance criteria section.
@@ -1401,9 +1377,8 @@ def offline_reader(records: list[JsonObject]) -> Reader:
 
 #: Printed by `--explain`.
 FINGERPRINT_NOTE: str = (
-    f"`{SCOPE_READINESS}` hashes {', '.join(sorted(CONTENT_HASH_PRESENT))} and the build contract keys "
-    f"under `metadata`; `{SCOPE_JUDGING}` hashes {', '.join(sorted(JUDGING_HASH_PRESENT))}. "
-    "Every other record key hashes as null, and no other metadata key is hashed."
+    f"The fingerprint hashes {', '.join(sorted(JUDGING_HASH_PRESENT))}. "
+    "Every other record key hashes as null, and no metadata key is hashed."
 )
 
 
@@ -1412,7 +1387,6 @@ def fingerprint_of(
     bead_id: str,
     rec: JsonObject,
     explain: bool = False,
-    scope: str = SCOPE_READINESS,
 ) -> Fingerprint:
     """Report the fingerprint of one record.
 
@@ -1420,36 +1394,24 @@ def fingerprint_of(
         bead_id: The bead the record belongs to.
         rec: Its record, or {} when nothing carries that id.
         explain: Also return the exact object hashed.
-        scope: `readiness` or `judging`.
 
     Returns:
-        The per-bead result: scope, found, fingerprint, and `stored` and `fresh` against
-        the stored readiness fingerprint.
+        The per-bead result: id, found and fingerprint.
 
     Raises:
         TypeError: An argument violates the declared input contract.
 
     """
-    if (
-        not (isinstance(bead_id, str))
-        or not (isinstance(rec, dict))
-        or not (isinstance(explain, bool))
-        or not (isinstance(scope, str))
-    ):
+    if not (isinstance(bead_id, str)) or not (isinstance(rec, dict)) or not (isinstance(explain, bool)):
         argument_error: str = "fingerprint_of: arguments do not satisfy the declared input contract"
         raise TypeError(argument_error)
-    stored: str = str(metadata_of(rec).get(CONTENT_HASH_KEY) or "").strip()
-    current: str = content_hash(rec, scope)
     result: Fingerprint = {
         "id": bead_id,
-        "scope": scope,
         "found": bool(rec),
-        "fingerprint": current,
-        "stored": stored,
-        "fresh": bool(stored) and bool(current) and stored == current,
+        "fingerprint": content_hash(rec),
     }
     if explain:
-        result["hashed"] = fingerprint_payload(rec, scope)
+        result["hashed"] = fingerprint_payload(rec)
     return result
 
 
@@ -1460,7 +1422,6 @@ class CommandOptions:
     id: str = ""
     ids: tuple[str, ...] = ()
     explain: bool = False
-    scope: HashScope = SCOPE_READINESS
     op: Literal["get", "set"] = "get"
     pairs: tuple[str, ...] = ()
     result: str = ""
@@ -1470,7 +1431,7 @@ class CommandOptions:
 
         Raises:
             TypeError: A field has the wrong type.
-            ValueError: An operation or fingerprint scope is unknown.
+            ValueError: The metadata operation is unknown.
 
         """
         if not isinstance(self.id, str) or not isinstance(self.result, str) or not isinstance(self.explain, bool):
@@ -1482,27 +1443,9 @@ class CommandOptions:
         if not isinstance(self.pairs, tuple) or not all(isinstance(value, str) for value in self.pairs):
             message = "CommandOptions.pairs must be a tuple of strings"
             raise TypeError(message)
-        if self.scope not in SCOPES or self.op not in {"get", "set"}:
-            message = "CommandOptions contains an unknown scope or metadata operation"
+        if self.op not in {"get", "set"}:
+            message = "CommandOptions contains an unknown metadata operation"
             raise ValueError(message)
-
-
-def _hash_scope(value: str) -> HashScope:
-    """Narrow a parsed `--scope` value to a fingerprint scope.
-
-    Returns:
-        The matching scope from the contract.
-
-    Raises:
-        ValueError: The value names no scope.
-
-    """
-    scope: HashScope
-    for scope in SCOPES:
-        if scope == value:
-            return scope
-    message: str = f"unknown fingerprint scope {value!r}; expected one of {', '.join(SCOPES)}"
-    raise ValueError(message)
 
 
 def _command_options(args: argparse.Namespace) -> CommandOptions:
@@ -1516,7 +1459,6 @@ def _command_options(args: argparse.Namespace) -> CommandOptions:
             ),
         ),
         explain=check_type(getattr(args, "explain", False), bool),
-        scope=_hash_scope(check_type(getattr(args, "scope", SCOPE_READINESS), str)),
         op=check_type(getattr(args, "op", "get"), Literal["get", "set"]),
         pairs=tuple(
             check_type(
@@ -1551,7 +1493,6 @@ def cmd_fingerprint(args: CommandOptions, reader: Reader) -> Fingerprint:
         args.id,
         reader.get(args.id),
         explain=args.explain,
-        scope=args.scope,
     )
     if args.explain:
         result["note"] = FINGERPRINT_NOTE
@@ -1591,16 +1532,11 @@ def cmd_fingerprint_batch(args: CommandOptions, reader: Reader) -> JsonObject:
     for bead_id in ids:
         if bead_id in results:
             continue
-        results[bead_id] = fingerprint_of(
-            bead_id,
-            reader.get(bead_id),
-            scope=args.scope,
-        )
+        results[bead_id] = fingerprint_of(bead_id, reader.get(bead_id))
 
     missing: list[str] = sorted(bead_id for bead_id, entry in results.items() if not entry["found"])
     result: dict[str, int | str | dict[str, str] | dict[str, Fingerprint] | list[str]] = {
         "count": len(results),
-        "scope": args.scope,
         "source": source,
         "trackerCalls": 0 if source == "records" else 1,
         "fingerprints": {bead_id: entry["fingerprint"] for bead_id, entry in results.items()},
@@ -1609,7 +1545,7 @@ def cmd_fingerprint_batch(args: CommandOptions, reader: Reader) -> JsonObject:
     }
     if args.explain:
         for bead_id, entry in results.items():
-            entry["hashed"] = fingerprint_payload(reader.get(bead_id), args.scope)
+            entry["hashed"] = fingerprint_payload(reader.get(bead_id))
         result["note"] = FINGERPRINT_NOTE
     return json_object(result)
 
@@ -1672,7 +1608,6 @@ def cmd_contract(args: CommandOptions, reader: Reader) -> JsonObject:
     criteria: Criteria = resolve_criteria(args.id, reader)
     if criteria["criteria"]:
         contract[ARG_ACCEPTANCE_CRITERIA] = [*criteria["criteria"]]
-    metadata: dict[str, JsonValue] = metadata_of(rec)
     missing: list[str] = []
     if not contract.get(REPO_REFERENCE):
         missing.append(
@@ -1710,7 +1645,6 @@ def cmd_contract(args: CommandOptions, reader: Reader) -> JsonObject:
             {"beadId": criteria["sourceId"], "field": criteria["sourceField"]} if criteria["inherited"] else None
         ),
         "criteriaSearched": list(criteria["searched"]),
-        "gate": {key: metadata[key] for key in GATE_KEYS if key in metadata},
         "missing": list(missing),
         "complete": not missing,
     }
@@ -1822,7 +1756,6 @@ def metadata(reader: Reader, bead_id: str, operation: Literal["get", "set"], pai
             "id": bead_id,
             "metadata": dict(metadata),
             "contract": {key: metadata[key] for key in CONTRACT_KEYS if key in metadata},
-            "gate": {key: metadata[key] for key in GATE_KEYS if key in metadata},
             "build": {key: metadata[key] for key in BUILD_LIFECYCLE_KEYS if key in metadata},
             "lane": {key: metadata[key] for key in LANE_KEYS if key in metadata},
             "artifact": {key: metadata[key] for key in ARTIFACT_KEYS if key in metadata},
@@ -1965,7 +1898,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     fingerprint: argparse.ArgumentParser = sub.add_parser(
         "fingerprint",
-        help="the content fingerprint, and whether the stored one is fresh",
+        help="the content fingerprint",
     )
     fingerprint.add_argument("id")
     fingerprint.add_argument(
@@ -1973,7 +1906,6 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="also print the exact object hashed",
     )
-    fingerprint.add_argument("--scope", choices=SCOPES, default=SCOPE_READINESS)
 
     batch: argparse.ArgumentParser = sub.add_parser(
         "fingerprint-batch",
@@ -1989,7 +1921,6 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="also print the exact object hashed for each",
     )
-    batch.add_argument("--scope", choices=SCOPES, default=SCOPE_READINESS)
 
     criteria: argparse.ArgumentParser = sub.add_parser(
         "criteria",

@@ -16,7 +16,7 @@ type JsonValue = str | int | float | bool | list[JsonValue] | dict[str, JsonValu
 type JsonObject = dict[str, JsonValue]
 
 #: SHA-256 of the schema text this module was generated from.
-SCHEMA_SHA256: Final[str] = "2a595584ae4c00d07af6cac37c3de214c15834a754ef00b6d00af5ad9ab2e687"
+SCHEMA_SHA256: Final[str] = "a32c218b347f10f2f35d2accefb4aba107e78fc27fb5f4a05edc8e4f28ce7875"
 
 #: The literal a producer writes for an undecided -or-unknown contract value; read as None.
 UNKNOWN: Final[str] = "unknown"
@@ -43,16 +43,6 @@ CONTRACT_KINDS: Final[tuple[ContractKind, ...]] = (
     KIND_OBJECT_OR_UNKNOWN,
 )
 
-#: readiness hashes the record content and the build contract; judging hashes only title, description, issue_type
-#: and priority.
-type HashScope = Literal["readiness", "judging"]
-SCOPE_READINESS: Final[HashScope] = "readiness"
-SCOPE_JUDGING: Final[HashScope] = "judging"
-SCOPES: Final[tuple[HashScope, ...]] = (
-    SCOPE_READINESS,
-    SCOPE_JUDGING,
-)
-
 type CdsDesignSource = Literal["bundle", "cds", "none"]
 CDS_DESIGN_SOURCE_BUNDLE: Final[CdsDesignSource] = "bundle"
 CDS_DESIGN_SOURCE_CDS: Final[CdsDesignSource] = "cds"
@@ -61,14 +51,6 @@ CDS_DESIGN_SOURCES: Final[tuple[CdsDesignSource, ...]] = (
     CDS_DESIGN_SOURCE_BUNDLE,
     CDS_DESIGN_SOURCE_CDS,
     CDS_DESIGN_SOURCE_NONE,
-)
-
-type ReviewStatus = Literal["COMPLETE", "INCOMPLETE"]
-REVIEW_COMPLETE: Final[ReviewStatus] = "COMPLETE"
-REVIEW_INCOMPLETE: Final[ReviewStatus] = "INCOMPLETE"
-REVIEW_STATUSES: Final[tuple[ReviewStatus, ...]] = (
-    REVIEW_COMPLETE,
-    REVIEW_INCOMPLETE,
 )
 
 type BuildState = Literal["red", "green", "deployed-unverified"]
@@ -169,13 +151,6 @@ KEY_CDS_BUNDLE_PATH: Final[str] = "cds_bundle_path"
 #: On a bundle web-ui Task: JSON array of absolute spec/build-spec.md paths, each with #<Section ID> when only
 #: some Sections are built.
 KEY_CDS_BUILD_SPECS: Final[str] = "cds_build_specs"
-KEY_REVIEW_STATUS: Final[str] = "review_status"
-#: Required non-empty when review_status is INCOMPLETE; empty when COMPLETE.
-KEY_REVIEW_MISSING: Final[str] = "review_missing"
-KEY_REVIEWED_AT: Final[str] = "reviewed_at"
-#: The readiness fingerprint the stored verdict was judged over.
-KEY_READY_CONTENT_HASH: Final[str] = "ready_content_hash"
-CONTENT_HASH_KEY: Final[str] = KEY_READY_CONTENT_HASH
 KEY_BUILD_STATE: Final[str] = "build_state"
 #: A handback stage from the handback contract; empty when the build did not stop.
 KEY_BUILD_STOP_STAGE: Final[str] = "build_stop_stage"
@@ -310,14 +285,6 @@ CONTRACT_SCHEMA: Final[tuple[tuple[str, str, ContractKind], ...]] = (
     (KEY_CDS_BUNDLE_PATH, ARG_CDS_BUNDLE_PATH, KIND_TEXT),
     (KEY_CDS_BUILD_SPECS, ARG_CDS_BUILD_SPECS, KIND_LIST),
 )
-#: Contract keys the readiness fingerprint covers only on a bead that carries them.
-CONTRACT_HASHED_WHEN_PRESENT: Final[frozenset[str]] = frozenset({
-    KEY_BUILD_PREREQUISITES,
-    KEY_CDS_DESIGN_SOURCE,
-    KEY_CDS_ARTIFACT,
-    KEY_CDS_BUNDLE_PATH,
-    KEY_CDS_BUILD_SPECS,
-})
 #: Contract arguments naming the Spec; a complete contract carries one.
 SPEC_REFERENCE: Final[tuple[str, ...]] = (
     ARG_SPEC_PATH,
@@ -326,29 +293,6 @@ SPEC_REFERENCE: Final[tuple[str, ...]] = (
 #: The contract argument naming the repository.
 REPO_REFERENCE: Final[str] = ARG_REPO_PATH
 
-#: Record keys the readiness fingerprint is taken over; keys outside CONTENT_HASH_PRESENT hash as null.
-CONTENT_HASH_FIELDS: Final[tuple[str, ...]] = (
-    "acceptance",
-    "acceptance_criteria",
-    "dependencies",
-    "deps",
-    "description",
-    "design",
-    "issue_type",
-    "labels",
-    "priority",
-    "title",
-    "type",
-)
-#: Readiness fingerprint keys hashed with their value.
-CONTENT_HASH_PRESENT: Final[frozenset[str]] = frozenset({
-    "acceptance_criteria",
-    "description",
-    "design",
-    "issue_type",
-    "priority",
-    "title",
-})
 #: Record keys the judging fingerprint is taken over; keys outside JUDGING_HASH_PRESENT hash as null.
 JUDGING_HASH_FIELDS: Final[tuple[str, ...]] = (
     "acceptance",
@@ -455,13 +399,6 @@ CONTRACT_KEYS: Final[tuple[str, ...]] = (
     KEY_CDS_BUNDLE_PATH,
     KEY_CDS_BUILD_SPECS,
 )
-#: Keys the readiness gate (task-ready) writes.
-GATE_KEYS: Final[tuple[str, ...]] = (
-    KEY_REVIEW_STATUS,
-    KEY_REVIEW_MISSING,
-    KEY_REVIEWED_AT,
-    KEY_READY_CONTENT_HASH,
-)
 #: Keys the build lane writes on a Task.
 BUILD_LIFECYCLE_KEYS: Final[tuple[str, ...]] = (
     KEY_BUILD_STATE,
@@ -552,7 +489,6 @@ SEQUENCING_KEYS: Final[tuple[str, ...]] = (
 #: Every metadata key this pipeline writes; `metadata get` lists other keys as unrecognized.
 KNOWN_KEYS: Final[frozenset[str]] = frozenset((
     *CONTRACT_KEYS,
-    *GATE_KEYS,
     *BUILD_LIFECYCLE_KEYS,
     *BUILD_STOP_KEYS,
     *CDS_AUDIT_KEYS,
@@ -583,10 +519,6 @@ class BeadMetadata(TypedDict, total=False):
     cds_artifact: str
     cds_bundle_path: str
     cds_build_specs: str
-    review_status: str
-    review_missing: str
-    reviewed_at: str
-    ready_content_hash: str
     build_state: str
     build_stop_stage: str
     build_stop_headline: str

@@ -9,7 +9,7 @@ Failure handling: bounded transient retries and quota pauses remain. Setup, code
    `SKIP_DONE`). Nothing sets a `done` Epic back.
 2. No Story is specified again and no Epic or Story journal is set back by the pipeline. Only the
    owner's `elabmark.py --start-at` sets a journal back.
-3. An item whose dispatch fails (a failed handback, an unbuildable outcome or a dispatch exception)
+3. An item whose dispatch fails (a failed handback or a dispatch exception)
    is never excluded for the rest of the supervisor invocation: the driver backs it off (300 s,
    doubling, at most 21 600 s, cleared by an `ok` handback or `failure_requeued`; a transient cause
    keeps its 30 s doubling backoff, at most 1 800 s) and dispatches it again, and the plugin resumes
@@ -380,19 +380,13 @@ freshness check.
   `tooling_recommendation`, never as a human action, never in the owner inbox, and never in
   failure counting. Every other failure carries its cause and its classification; ordinary item
   failures are recorded, and a failure stops its lane only for a known lane-wide cause.
-- **7.9 at the build boundary.** A Task elaboration left unbuildable (not written by
-  elaboration, no parent Story, or a Story naming no usable repository: none recorded, not on
-  disk, or one `polyrepo create` left before its first commit), whether selection finds it or
-  `task-to-deploy` reports it at `blocked-upstream` with an `upstreamMissing` entry whose `what`
-  begins `elaboration:`, asks nobody anything: the build lane skips the Task, re-checks it on
-  every pass, and records it once per Task and reason as a ledger event of type
-  `unbuildable_task`, never as a human action and never in failure counting
-  (`taskdefects.py`). The driver never resets an Epic's step journal for it, so a live Epic's
-  elaboration is never re-entered at a step the driver picks: the journal alone decides where a
-  run begins, and only the owner starts one earlier (`elabmark.py --start-at`). The Epic's next
-  elaboration repairs what it wrote, because `beadwrite` finds each Story and Task by its
-  elaboration key and updates it in place, and `polyrepo create` finishes a repository it left
-  unfinished; a Task elaboration did not write stays skipped.
+- **7.9 at the build boundary.** The elaboration lane makes sure a Task is ready; the build lane
+  assumes every Task it receives is ready. Neither the driver's selection nor `task-to-deploy`
+  re-checks what elaboration guarantees (that elaboration wrote the Task, that it has acceptance
+  criteria, a spec, a parent Story and a repository, or that its spec still matches): a Task is
+  selected for build when its type is buildable, it is scored, its blockers are closed, its
+  declared producer prerequisites are met and its Epic's elaboration is done. The build verifies
+  its own work (tests, lint, quality gates, deploy verification) and its run-time environment.
 - **7.2** Only the owner runs the pipeline; nothing in this contract is run as a test.
 - **7.8** Selection filters stay in `selection.py` / `elabstate.py` (§2), and only there: the
   driver is the only door, so `prd-to-spec` does not repeat them.
