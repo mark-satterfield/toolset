@@ -2680,8 +2680,7 @@ def finish_records(cfg: Config, data: dict[str, object]) -> None:
 
 # --------------------------------------------------------------------------------------------
 # tiers: which repositories are product (tier 1) and which are tooling (tier 2). The manifest
-# records the tier of every repository it has an entry for. A repository outside the repository
-# root, which has no entry, is listed in the config's `tiers.external`.
+# records the tier of every repository it has an entry for.
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -2691,7 +2690,6 @@ class TierRepo:
     name: str
     path: Path
     tier: str
-    source: str
 
     def paths(self) -> tuple[Path, ...]:
         """Return the clone's path as recorded and, when a symbolic link makes it differ, its real path.
@@ -2724,52 +2722,20 @@ def _absolute(raw: str) -> Path:
     return Path(os.path.normpath(Path.cwd() / Path(raw).expanduser()))
 
 
-def _external_tiers(cfg: Config) -> tuple[list[TierRepo], list[str]]:
-    """Read the config's `tiers.external`: repositories outside the repository root, each with its tier.
-
-    Each entry has a `name`, a `path` (environment variables are expanded) and a `tier`.
+def tier_repos(manifest: Manifest, local: dict[str, LocalRepo]) -> list[TierRepo]:
+    """List every clone on disk whose manifest entry records a tier.
 
     Returns:
-        The repositories whose path is the root of a git clone, and a problem for each that is not.
-
-    Raises:
-        PolyrepoError: when the section is malformed or an entry names a tier that does not exist.
-
-    """
-    section = _map(cfg.raw.get("tiers") or {}, "config tiers")
-    repos: list[TierRepo] = []
-    problems: list[str] = []
-    for item in _seq(section.get("external") or [], "config tiers.external"):
-        entry = _map(item, "config tiers.external entry")
-        name = _str(entry.get("name"), "tiers.external name")
-        tier = _str(entry.get("tier"), f"tiers.external tier of {name}")
-        if tier not in TIERS:
-            msg = f"config tiers.external: {name} has tier {tier!r}, which is neither {TIER_PRODUCT} nor {TIER_TOOLING}"
-            raise PolyrepoError(msg)
-        raw = expand_env(_str(entry.get("path"), f"tiers.external path of {name}"))
-        path = _absolute(raw)
-        if not (path / ".git").exists():
-            problems.append(f"{name}: {path} is not the root of a git clone")
-            continue
-        repos.append(TierRepo(name, path, tier, "config"))
-    return repos, problems
-
-
-def tier_repos(cfg: Config, manifest: Manifest, local: dict[str, LocalRepo]) -> tuple[list[TierRepo], list[str]]:
-    """List every clone with a recorded tier: those on disk with a manifest tier, and the external ones.
-
-    Returns:
-        The repositories, sorted by path, and the problems found with the external ones.
+        The repositories, sorted by path.
 
     """
     entries = manifest.entries()
     repos = [
-        TierRepo(name, r.path, str(entries[name]["tier"]), "manifest")
+        TierRepo(name, r.path, str(entries[name]["tier"]))
         for name, r in local.items()
         if name in entries and entries[name].get("tier") in TIERS
     ]
-    external, problems = _external_tiers(cfg)
-    return sorted([*repos, *external], key=lambda t: str(t.path)), problems
+    return sorted(repos, key=lambda t: str(t.path))
 
 
 def tier_of_path(repos: list[TierRepo], paths: tuple[Path, ...]) -> TierAnswer:
@@ -2850,7 +2816,7 @@ def cmd_tier(args: argparse.Namespace, cfg: Config) -> int:
         0 when a repository that records a tier contains the path, else 1.
 
     """
-    repos, _ = tier_repos(cfg, Manifest(cfg.manifest, GitHub(cfg, use_cache=True)), discover(cfg)[0])
+    repos = tier_repos(Manifest(cfg.manifest, GitHub(cfg, use_cache=True)), discover(cfg)[0])
     given = _absolute(expand_env(args.path))
     got = tier_of_path(repos, tuple(dict.fromkeys((given, given.resolve()))))
     where = got.repo.path if got.repo else got.toplevel
@@ -2859,7 +2825,6 @@ def cmd_tier(args: argparse.Namespace, cfg: Config) -> int:
         "repository": got.repo.name if got.repo else None,
         "repository_path": str(where) if where else None,
         "tier": got.repo.tier if got.repo else None,
-        "source": got.repo.source if got.repo else None,
         "linked_worktree": got.linked_worktree,
     }
     emit(
@@ -2874,31 +2839,24 @@ def cmd_tier(args: argparse.Namespace, cfg: Config) -> int:
 
 
 def cmd_tiers(args: argparse.Namespace, cfg: Config) -> int:
-    """List every recorded tier and check that every external repository resolves.
+    """List every repository on disk whose manifest entry records a tier.
 
     Returns:
-        0 when every external repository resolves, else 1.
+        0.
 
     """
-    repos, problems = tier_repos(cfg, Manifest(cfg.manifest, GitHub(cfg, use_cache=True)), discover(cfg)[0])
-    findings: list[dict[str, object]] = [
-        {"repo": "-", "kind": "tier-external", "detail": p, "status": "open"} for p in problems
-    ]
+    repos = tier_repos(Manifest(cfg.manifest, GitHub(cfg, use_cache=True)), discover(cfg)[0])
     data: dict[str, object] = {
-        "repositories": [{"name": r.name, "path": str(r.path), "tier": r.tier, "source": r.source} for r in repos],
-        "findings": findings,
-        "open": len(findings),
+        "repositories": [{"name": r.name, "path": str(r.path), "tier": r.tier} for r in repos],
     }
     emit(
         args,
         data,
         lambda: "\n".join(
-            [f"{len(repos)} repositories record a tier"]
-            + [f"  {r.tier:8} {r.name}  {r.path}" for r in repos]
-            + [f"  [{f['kind']}] {f['detail']}" for f in findings],
+            [f"{len(repos)} repositories record a tier"] + [f"  {r.tier:8} {r.name}  {r.path}" for r in repos],
         ),
     )
-    return 1 if findings else 0
+    return 0
 
 
 def cmd_set_tier(args: argparse.Namespace, cfg: Config) -> int:
@@ -9231,12 +9189,12 @@ def cmd_control_pointers(args: argparse.Namespace, cfg: Config) -> int:
 
 
 def _tech_stack_targets(cfg: Config, wanted: list[str] | None, space: str | None) -> list[tuple[str, Path]]:
-    """List the active clones to scan: those under the root, and the external ones unless a space is named.
+    """List the active clones under the root to scan.
 
     Args:
         cfg: The project settings.
         wanted: Repository names to keep, compared without case; None keeps every one.
-        space: The app space to keep; None keeps every space and the external repositories.
+        space: The app space to keep; None keeps every space.
 
     Returns:
         (name, path) for each clone.
@@ -9245,9 +9203,9 @@ def _tech_stack_targets(cfg: Config, wanted: list[str] | None, space: str | None
         PolyrepoError: When a wanted name is no active clone.
 
     """
-    local = [(r.name, r.path) for r in _local_repos(cfg, None, space) if not cfg.is_deprecated_name(r.name)]
-    external = [] if space else [(t.name, t.path) for t in _external_tiers(cfg)[0]]
-    by_name = {name.lower(): (name, path) for name, path in [*local, *external]}
+    by_name = {
+        r.name.lower(): (r.name, r.path) for r in _local_repos(cfg, None, space) if not cfg.is_deprecated_name(r.name)
+    }
     if not wanted:
         return sorted(by_name.values(), key=lambda item: item[0].lower())
     unknown = [w for w in wanted if w.lower() not in by_name]
@@ -10183,7 +10141,6 @@ DOCTOR_CHECKS: dict[str, list[str]] = {
     "beads-fleet": [sys.executable, str(SELF), "beads-fleet", "--json"],
     "environment": [sys.executable, str(SELF), "environment", "--json"],
     "python-names": [sys.executable, str(SELF), "python-names", "--json"],
-    "tiers": [sys.executable, str(SELF), "tiers", "--json"],
     "deprecated-prs": [sys.executable, str(SELF), "deprecated-prs", "--json"],
     "archive-due": [sys.executable, str(SELF), "archive-due", "--dry-run", "--json"],
 }
@@ -10304,7 +10261,6 @@ def _doctor_findings(check: str, data: dict[str, object]) -> list[DoctorFinding]
         "deprecated-prs",
         "environment",
         "python-names",
-        "tiers",
     }:
         rows = [_map(f, "finding") for f in _seq(data.get("findings") or [], "findings")]
         return [
@@ -11017,7 +10973,7 @@ def _add_inspect_commands(add: Callable[[str, str], argparse.ArgumentParser]) ->
         "the tech stacks each repo holds and the checker configurations it carries, read from its files",
     )
     s.add_argument("--repo", action="append", help="only this repo (repeatable)")
-    s.add_argument("--space", help="only this app space (default: every app space and the external repos)")
+    s.add_argument("--space", help="only this app space (default: every app space)")
     s.add_argument(
         "--summary",
         action="store_true",
@@ -11145,7 +11101,7 @@ def _add_tier_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> No
 
     s = add(
         "tiers",
-        "list every recorded tier and check that every external repository resolves",
+        "list every repository on disk whose manifest entry records a tier",
     )
     s.set_defaults(func=cmd_tiers)
 

@@ -74,8 +74,7 @@ is the full set of things you must end up knowing — order is flexible.
     files are built in worktrees and change through pull requests, its
     `AGENTS.md`, `CLAUDE.md` and `.claude/` are tier 2; `tooling`: the machinery
     that builds the product, all of it committed on `main` in the primary
-    working tree). Record the answer in `tier`; a repository outside the
-    repository root goes in the config's `tiers.external` instead.
+    working tree). Record the answer in `tier`.
 - Are there repos that are not strictly part of this project but are
   closely related? (e.g., shared design system, shared CI templates,
   vendor forks) — capture them as `adjacent` if so.

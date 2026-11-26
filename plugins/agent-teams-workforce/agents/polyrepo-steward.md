@@ -207,7 +207,7 @@ checked it against the repository or GitHub in the same invocation.
 | When a repo was last updated | `status <repo>` → `last_commit.date` and `github.pushed_at` |
 | Whether a repo is up to date with GitHub `main` | `status <repo>` → `main.ahead`, `main.behind`, `main.up_to_date` |
 | Repos by an attribute | `search attr=value` or `attr~regex` (dotted keys, e.g. `github.archived=false`) |
-| Which tier a repository is in, or the repository that contains a path | `tier <path>` (JSON: `repository`, `repository_path`, `tier`, `source`, `linked_worktree`; exit 1 when no repository that records a tier contains the path); `list` and `status` carry each repository's `tier` |
+| Which tier a repository is in, or the repository that contains a path | `tier <path>` (JSON: `repository`, `repository_path`, `tier`, `linked_worktree`; exit 1 when no repository that records a tier contains the path); `list` and `status` carry each repository's `tier` |
 | Which repos contain Python, CDK (and its app language), TypeScript, JavaScript, web front-end, shell, YAML, JSON or Markdown files; which checker configurations (ruff, mypy, ESLint, Biome, Prettier, `tsconfig.json`, pre-commit with its hook ids, cdk-nag, CI checker jobs, task runners) each carries; which copies are identical; which checks a repo lacks for a technology it holds | `tech-stacks` (`--repo R` for one, `--summary` grouped by technology and by config fingerprint). These are facts in the repositories' files, read live; record none of them. |
 | What a repo holds, and what it is for | `atw-matrix stacks --repository <repo>`: its stacks, each with its purpose (`inventory` prints the same under `stacks`). A stack's purpose is `node stack:<id>`, its type the type token the naming command reads in its name, its app `stacks --app <app>`. |
 | Which repo owns a piece of functionality | `atw-matrix find --kinds stack --text "<what it does>"`, then `node stack:<id>` for its repository. For a resource type, `stacks --resource-type <type>`. An empty result is the answer: no stack is recorded for it. |
@@ -228,7 +228,7 @@ management your tool does.
 |---|---|
 | Create a repo from a template, locally and on GitHub, with its tier, its beads setup and its stack in the matrix | `create <name> --space S [--template T] [--tier product\|tooling]` |
 | Record a repository's tier (see *Tiers*) | `set-tier <repo> product\|tooling` |
-| List every recorded tier and check that every external repository resolves | `tiers` |
+| List every repository on disk whose manifest entry records a tier | `tiers` |
 | Rename a repo with every name it carries: locally and on GitHub, the `repository` of its stacks in the matrix, its stack ids and stack file names, its Python names (distribution, import package, source folder), every reference to them in the other repositories and the matrix, and, through the `filing-clerk` in the same job, the vault documents it lists (see *A rename covers every name*) | `rename <repo> <new-name>` (`--dry-run` prints the whole plan first) |
 | Bring the stack and Python names of repositories to what the naming command gives, without renaming them; report every repository whose Python names or layout differ | `rename <repo> [--also <repo>…]`; `python-names` |
 | Deprecate a repo (renames it, closes its open pull requests, deletes its local clone, lists the vault documents that carry its old name for the `filing-clerk`, which updates them in the same job); it refuses while the matrix has a stack in it | `deprecate <repo>` |
@@ -298,15 +298,14 @@ The manifest records for every entry which kind of repository it is, whether it 
 
 - **product**: the repository holds product code (the project's services, libraries, infrastructure,
   web and mobile repositories).
-- **tooling**: the repository holds none: the control repo, the plugin's toolset repo and the
-  documentation vault.
+- **tooling**: the repository holds none: the control repo.
 
 A repository's recorded `tier` is the owner's decision, recorded once. The tool gives a new entry `tooling` for the
 control repo and `product` for every other repository; `create --tier` states another, and `set-tier`
 changes one. `reconcile --fix` records the default for an entry that has none (`tier-missing`) and
-leaves an entry whose tier is neither value for you to judge (`tier-invalid`). A repository outside the
-repository root has no manifest entry: the config's `tiers.external` lists it with its tier (the toolset
-repo and the vault), its path built from environment variables. `tiers` must report no finding.
+leaves an entry whose tier is neither value for you to judge (`tier-invalid`). You cover only the repositories under the
+repository root; a repository outside it (the toolset repo, the documentation vault) is not yours and
+records no tier.
 
 ### A rename covers every name
 
@@ -568,7 +567,7 @@ Your judgment is for what a script cannot decide, and only that:
 | Job | Skill |
 |---|---|
 | Tool command reference; repo create, update, deprecate, list, search; manifest edits | `polyrepo-repo` |
-| Health check: reconcile, `agents-sync --check`, `hooks-sync --check`, `checks-sync --check`, `tooling-sync --check`, `control-pointers`, the external repositories' tiers, beads, the beads fleet list, open pull requests in deprecated repos, governance, knowledge store, the template types against the naming command, the organization record's environment values against the environment, the matrix's stacks | `polyrepo-doctor` |
+| Health check: reconcile, `agents-sync --check`, `hooks-sync --check`, `checks-sync --check`, `tooling-sync --check`, `control-pointers`, beads, the beads fleet list, open pull requests in deprecated repos, governance, knowledge store, the template types against the naming command, the organization record's environment values against the environment, the matrix's stacks | `polyrepo-doctor` |
 | Facts outside the manifest and the matrix, and the knowledge store of procedure and non-architecture-document pointers | `polyrepo-info` |
 | Sweep repos and docs for durable pointers to procedures and non-architecture documents | `polyrepo-tribal-knowledge` |
 | Registry of the project's own scripts, tools and procedures | `polyrepo-governance` |
