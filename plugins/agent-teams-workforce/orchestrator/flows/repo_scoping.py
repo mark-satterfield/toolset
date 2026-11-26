@@ -148,7 +148,6 @@ PRESENT_WHERE: Final[tuple[str, ...]] = ("disk", "github", "manifest")
 CREATE_PROBLEMS: Final[tuple[str, ...]] = (
     "format_error",
     "matrix_error",
-    "ruleset_error",
     "beads_error",
     "gitnexus_error",
 )

@@ -129,7 +129,7 @@ The order is fixed, and only the stacks of what the Stories build are reached:
    leaves is its own unfinished output, which the next `polyrepo create` of the name replaces.
    A failed GitHub creation or push after the first commit leaves the scaffold commit, and the
    next `polyrepo create` of the name continues from the push and the manifest entry. A
-   failed step after the push to GitHub (formatting, matrix, rulesets, beads, GitNexus) leaves
+   failed step after the push to GitHub (formatting, matrix, beads, GitNexus) leaves
    the repository made and is kept in the creation record as a problem. A name the naming command refuses (checked for every name before any is created)
    and a failed `polyrepo create` fail the step as an item failure at stage `repo-creation`,
    cause `other`, with the cause as evidence; a failed GitHub check is a setup failure

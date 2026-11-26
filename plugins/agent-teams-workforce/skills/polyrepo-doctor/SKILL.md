@@ -25,7 +25,6 @@ tool: start from `doctor --json`, or `doctor --fix --json` to repair first.
 | `agents-sync` | `agents-sync --check` | every repo on disk that is not deprecated has the current shared `AGENTS.md` blocks |
 | `hooks-sync` | `hooks-sync --check` | every repo on disk that is not deprecated registers the current shared hooks in its `.claude/settings.json` |
 | `checks-sync` | `checks-sync --check` | every repo on disk that is not deprecated has the current canonical code checks of its technologies (`.code-checks/`, the canonical configuration files, the assembled `.pre-commit-config.yaml`, the `lint` task), nothing that contradicts them, every repository file consuming them, and the commit hook installed. A note on a repository's own file (a tsconfig or ESLint config that weakens the base, missing Node devDependencies) is tier 1 work in that repository |
-| `rulesets` | `rulesets`: every non-deprecated repo on disk whose manifest tier is `product` and whose workflows report every status check a ruleset of the config's `rulesets.files` requires | the repo carries that ruleset on GitHub exactly as its file states it. Kinds: `ruleset-missing`, `ruleset-differs`, `ruleset-unreadable` |
 | `tiers` | `tiers`: the config's `tiers.external` | every external path is the root of a git clone. Kind: `tier-external` (the config's path does not resolve: correct `tiers.external` in the config). A manifest entry with no tier is a `reconcile` finding (`tier-missing`), repaired by `reconcile --fix` |
 | `tooling-sync` | `tooling-sync --check` | every repo that is not deprecated (the control repo excluded) holds current copies of the tooling the config's `tooling_sync.files` names for it (the GitNexus scripts, the project skills, a library's release script) |
 | `control-pointers` | `control-pointers`: the tracked files of every repo that is not deprecated (the control repo excluded), the records `rename.sweep_exclude` lists left out | no line names a variable `control_pointers.variables` lists, the control repo's path or a relative path that climbs into it. Kind: `control-pointer` (the file, line and text). Not repaired by `--fix`: fix the line in the repository (a product file of a product repository through a worktree and a pull request) and its source in the control repo |
@@ -52,7 +51,7 @@ steward's organization record.
 
 ## `--fix`
 
-`doctor --fix` runs `reconcile --fix`, `agents-sync`, `hooks-sync`, `checks-sync`, `rulesets --fix`, `gitnexus-sync`, `tooling-sync`, `beads-setup --all`, `beads-fleet --fix`,
+`doctor --fix` runs `reconcile --fix`, `agents-sync`, `hooks-sync`, `checks-sync`, `gitnexus-sync`, `tooling-sync`, `beads-setup --all`, `beads-fleet --fix`,
 `deprecated-prs --fix` and then `archive-due` before the checks; each commits and pushes what it changed.
 `gitnexus-sync` removes every GitNexus group member that is no active clone: the group entry only, never a file, an index or a clone.
 `archive-due` archives every deprecated repo that is due (the project's scheduled
@@ -68,8 +67,7 @@ deprecated." and keeps its branch. `agents-sync`, `hooks-sync`, `checks-sync`, `
 `.claude/`, the GitNexus files and the code-check configuration are tier 2 in every repository): in a temporary `main` worktree when the
 primary tree is on `develop`, followed by the same sync on `develop` in the primary tree, pushed directly. A finding names each branch
 and its state (for example `main: outdated; develop: current`); a branch that cannot be brought up to origin (`stale-main`, `stale-develop`)
-or whose push the remote rejects (`committed`) keeps its finding until that is settled. `rulesets --fix`
-creates each missing ruleset on GitHub and replaces each differing one from its file. What stays open needs judgment:
+or whose push the remote rejects (`committed`) keeps its finding until that is settled. What stays open needs judgment:
 
 - Reconcile judgment findings: settle them as the `polyrepo-repo` skill's finding table
   says, then run `reconcile` again.

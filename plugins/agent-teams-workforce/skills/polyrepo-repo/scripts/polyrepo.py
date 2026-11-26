@@ -178,7 +178,6 @@ from naming_command import (
     repository_names,
     type_problem,
 )
-from rulesets import RulesetSpec, RulesetSpecError, applies, load_rulesets, workflow_checks
 from technology_scan import RepoScan, scan_markdown, scan_repository, summarize, summary_markdown
 from tooling_sync import Copy, ToolingSpec, ToolingSyncError
 from tooling_sync import apply as apply_tooling
@@ -4160,12 +4159,10 @@ def _create_resume(cfg: Config, name: str, tdir: Path, dest: Path) -> CreateResu
 
 @dataclasses.dataclass(frozen=True)
 class ProductBranchPolicy:
-    """Configured final branch roles and organization rules for newly created product repositories."""
+    """Configured final branch roles for newly created product repositories."""
 
     integration_branch: str
     release_branch: str
-    include_rulesets: tuple[str, ...]
-    exclude_rulesets: tuple[str, ...]
 
 
 PRODUCT_BRANCH_MARKER = "product-branch-initialization.json"
@@ -4182,13 +4179,13 @@ def _creation_branch_policy(cfg: Config, tier: str | None) -> ProductBranchPolic
 
 
 def _branch_policy(config: Mapping[str, object], default_branch: str) -> ProductBranchPolicy | None:
-    """Read and validate the config's `product_branch_policy`: the integration and release branches and rules.
+    """Read and validate the config's `product_branch_policy`: the integration and release branches.
 
     Returns:
         The policy, or None when the config has none.
 
     Raises:
-        PolyrepoError: When configured branch names or rule selections are invalid.
+        PolyrepoError: When configured branch names are invalid.
 
     """
     if not config.get("product_branch_policy"):
@@ -4202,55 +4199,7 @@ def _branch_policy(config: Mapping[str, object], default_branch: str) -> Product
     if integration == release or release != default_branch:
         message = "product integration must differ from the configured default/release branch"
         raise PolyrepoError(message)
-    include = tuple(_strs(raw.get("include_rulesets"), "include_rulesets"))
-    exclude = tuple(_strs(raw.get("exclude_rulesets"), "exclude_rulesets"))
-    if set(include) & set(exclude):
-        message = "a product ruleset cannot be both included and excluded"
-        raise PolyrepoError(message)
-    return ProductBranchPolicy(integration, release, include, exclude)
-
-
-def _enroll_product_rule(cfg: Config, name: str, rule_id: object, selection: str) -> None:
-    """Add one repository to an existing organization rule's explicit name selection.
-
-    GitHub errors and malformed selectors propagate without changing unrelated rules.
-
-    """
-    endpoint = f"orgs/{cfg.owner}/rulesets/{rule_id}"
-    body = _map(_gh_json(endpoint), "organization ruleset")
-    conditions = _map(body.get("conditions"), "ruleset conditions")
-    names = _map(conditions.get("repository_name"), "repository_name selector")
-    selected = _strs(names.get(selection), f"repository_name.{selection}")
-    if name in selected:
-        return
-    names[selection] = [*selected, name]
-    conditions["repository_name"] = names
-    payload: dict[str, object] = {
-        key: body[key] for key in ("name", "target", "enforcement", "rules", "bypass_actors") if key in body
-    }
-    payload["conditions"] = conditions
-    with tempfile.TemporaryDirectory(prefix="product-ruleset-") as directory:
-        path = Path(directory) / "rule.json"
-        path.write_text(json.dumps(payload))
-        _gh_json("-X", "PUT", endpoint, "--input", str(path))
-
-
-def _enroll_product_rules(cfg: Config, name: str, policy: ProductBranchPolicy) -> None:
-    """Enroll new products in configured rules without changing unrelated repositories.
-
-    Raises:
-        PolyrepoError: When a configured organization rule is missing.
-
-    """
-    listed = _seq(_gh_json(f"orgs/{cfg.owner}/rulesets?per_page=100"), "organization rulesets")
-    rules = {str(item.get("name")): item.get("id") for row in listed if (item := _map(row, "ruleset"))}
-    wanted = (*policy.include_rulesets, *policy.exclude_rulesets)
-    if missing := set(wanted) - rules.keys():
-        message = f"missing product organization rulesets: {', '.join(sorted(missing))}"
-        raise PolyrepoError(message)
-    for selection, names in (("include", policy.include_rulesets), ("exclude", policy.exclude_rulesets)):
-        for rule_name in names:
-            _enroll_product_rule(cfg, name, rules[rule_name], selection)
+    return ProductBranchPolicy(integration, release)
 
 
 def _remote_product_tip(dest: Path, branch: str) -> str | None:
@@ -4300,7 +4249,6 @@ def _finalize_product_branches(
         PolyrepoError: When the branch rename has not propagated or branch tips differ.
 
     """
-    _enroll_product_rules(cfg, name, policy)
     integration, release = policy.integration_branch, policy.release_branch
     if _remote_product_tip(dest, integration) is None:
         if _remote_product_tip(dest, release) != baseline:
@@ -4426,13 +4374,12 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
                 [
                     (
                         f"after scaffold and records, initialize {product_policy.integration_branch} as default and "
-                        f"{product_policy.release_branch} at the same baseline, enrolling configured organization rules"
+                        f"{product_policy.release_branch} at the same baseline"
                     ),
                 ]
                 if product_policy is not None
                 else []
             ),
-            "give a product repo the GitHub rulesets whose required checks its workflows report (rulesets.files)",
             f"add the manifest entry (lifecycle {args.lifecycle}, tier {args.tier or default_tier(cfg, name)})",
             "record the repo's stack in the matrix when its name ends in a stack type (purpose not stated)",
             "set up beads: .beads config files, shared-server database, standard .gitignore; commit and push",
@@ -4480,7 +4427,6 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
                 f"{name}: created at {dest} and pushed to GitHub"
                 + (f"; formatting left findings: {res['format_error']}" if res.get("format_error") else "")
                 + (f"; matrix update failed: {res['matrix_error']}" if res.get("matrix_error") else "")
-                + (f"; rulesets failed: {res['ruleset_error']}" if res.get("ruleset_error") else "")
                 + (f"; beads setup failed: {res['beads_error']}" if res.get("beads_error") else "")
                 + (f"; GitNexus index failed: {res['gitnexus_error']}" if res.get("gitnexus_error") else ""),
                 *_placement_lines(res),
@@ -4687,42 +4633,11 @@ def _create_stack_records(cfg: Config, name: str, space: str) -> list[str]:
     return [record_stack(cfg, name, space, known)]
 
 
-def _create_rulesets(
-    args: argparse.Namespace,
-    cfg: Config,
-    dest: Path,
-    res: dict[str, object],
-    log: list[str],
-) -> int:
-    """Give the new repo the rulesets it carries (see `applicable_rulesets`), recording them in res and log.
-
-    Returns:
-        0, or 1 when a ruleset could not be read or created.
-
-    """
-    name = args.name
-    try:
-        wanted = applicable_rulesets(_ruleset_specs(cfg), args.tier or default_tier(cfg, name), dest)
-    except PolyrepoError as exc:
-        res["ruleset_error"] = str(exc)
-        log.append(f"rulesets FAILED: {exc}")
-        return 1
-    failed = [f for f in ruleset_findings(cfg, name, wanted, fix=True) if f.status != "fixed"]
-    res["rulesets"] = [s.name for s in wanted]
-    if failed:
-        res["ruleset_error"] = "; ".join(f"{f.detail}: {f.error}" for f in failed)
-        log.append(f"rulesets FAILED: {res['ruleset_error']}")
-        return 1
-    if wanted:
-        log.append(f"rulesets: {', '.join(s.name for s in wanted)}")
-    return 0
-
-
 def _create_records(args: argparse.Namespace, cfg: Config, dest: Path, res: dict[str, object]) -> int:
-    """Add the new repo's manifest entry, record its stack, set its rulesets and beads, and commit.
+    """Add the new repo's manifest entry, record its stack, set its beads, and commit.
 
     Returns:
-        0, or 1 when the environment, matrix, rulesets or beads setup failed.
+        0, or 1 when the environment, matrix or beads setup failed.
 
     """
     name = args.name
@@ -4741,7 +4656,6 @@ def _create_records(args: argparse.Namespace, cfg: Config, dest: Path, res: dict
         res["matrix_error"] = str(exc)
         log.append(f"matrix update FAILED: {exc}")
         code = 1
-    code = max(code, _create_rulesets(args, cfg, dest, res, log))
     if res.get("environment"):
         log.append(f"environment set up: {'; '.join(_strs(_map(res['environment'], 'environment')['steps'], 'steps'))}")
     if res.get("gitnexus_error"):
@@ -8710,29 +8624,9 @@ def cmd_checks_sync(args: argparse.Namespace, cfg: Config) -> int:
     return 1 if bad else 0
 
 
-# rulesets -------------------------------------------------------------------------------------
-# The config's `rulesets.files` name the GitHub repository rulesets (rulesets.py). Which ones a
-# repository carries is `applicable_rulesets`; `create` applies them and `cmd_rulesets` checks them.
+# GitHub API ----------------------------------------------------------------------------------
 
-RULESET_TIMEOUT = 60
-
-
-def _ruleset_specs(cfg: Config) -> list[RulesetSpec]:
-    """Read the ruleset files the config names.
-
-    Returns:
-        The rulesets; none when the config has no `rulesets` section.
-
-    Raises:
-        PolyrepoError: when a ruleset file is missing or malformed.
-
-    """
-    section = _map(cfg.raw.get("rulesets") or {}, "config rulesets")
-    files = [cfg.file.parent / f for f in _strs(section.get("files") or [], "config rulesets.files")]
-    try:
-        return load_rulesets(files)
-    except RulesetSpecError as exc:
-        raise PolyrepoError(str(exc)) from exc
+GH_API_TIMEOUT = 60
 
 
 def _gh_json(*args: str) -> object:
@@ -8742,113 +8636,9 @@ def _gh_json(*args: str) -> object:
         The parsed output.
 
     """
-    cp = run(["gh", "api", *args], timeout=RULESET_TIMEOUT)
+    cp = run(["gh", "api", *args], timeout=GH_API_TIMEOUT)
     must(cp)
     return json.loads(cp.stdout or "null")
-
-
-def _repository_rulesets(cfg: Config, name: str) -> dict[str, int]:
-    """List the repository's own rulesets (not the organization's) by name.
-
-    Returns:
-        The ruleset ids by name.
-
-    """
-    listed = _gh_json(f"repos/{cfg.owner}/{name}/rulesets")
-    out: dict[str, int] = {}
-    for item in _seq(listed or [], "rulesets"):
-        entry = _map(item, "ruleset")
-        if entry.get("source_type") == "Repository":
-            out[str(entry.get("name"))] = int(str(entry.get("id")))
-    return out
-
-
-def ruleset_findings(cfg: Config, name: str, specs: Sequence[RulesetSpec], fix: bool) -> list[Finding]:
-    """Compare a repository's rulesets on GitHub with the specs that apply to it, and with fix create or correct them.
-
-    Returns:
-        One finding per ruleset that is missing or differs, with its status after any fix.
-
-    """
-    try:
-        live = _repository_rulesets(cfg, name)
-    except (GitFailedError, PolyrepoError, json.JSONDecodeError, ValueError) as exc:
-        return [Finding("ruleset-unreadable", name, f"could not list its rulesets: {exc}", status="failed")]
-    found: list[Finding] = []
-    for spec in specs:
-        rid = live.get(spec.name)
-        if rid is None:
-            finding = Finding("ruleset-missing", name, f"has no ruleset {spec.name}", fix=f"create {spec.name}")
-            argv = ["-X", "POST", f"repos/{cfg.owner}/{name}/rulesets", "--input", str(spec.path)]
-        else:
-            body = _map(_gh_json(f"repos/{cfg.owner}/{name}/rulesets/{rid}"), "ruleset")
-            fields = spec.differs(body)
-            if not fields:
-                continue
-            finding = Finding(
-                "ruleset-differs",
-                name,
-                f"ruleset {spec.name} differs in {', '.join(fields)}",
-                fix=f"set {spec.name} from {spec.path.name}",
-            )
-            argv = ["-X", "PUT", f"repos/{cfg.owner}/{name}/rulesets/{rid}", "--input", str(spec.path)]
-        if fix:
-            cp = run(["gh", "api", *argv], timeout=RULESET_TIMEOUT)
-            finding.status, finding.error = ("fixed", None) if cp.returncode == 0 else ("failed", _last_line(cp))
-        found.append(finding)
-    return found
-
-
-def applicable_rulesets(specs: Sequence[RulesetSpec], tier: str | None, repo: Path) -> list[RulesetSpec]:
-    """Pick the rulesets a repository carries: a product repository's whose required checks its workflows report.
-
-    Returns:
-        The rulesets; none for a repository that is not product.
-
-    """
-    if tier != TIER_PRODUCT:
-        return []
-    checks = workflow_checks(repo)
-    return [s for s in specs if applies(s, checks)]
-
-
-def cmd_rulesets(args: argparse.Namespace, cfg: Config) -> int:
-    """Check that every product repository carries its rulesets on GitHub; with --fix, create or correct them.
-
-    Returns:
-        0 when every repository carries them (or each was fixed), else 1.
-
-    """
-    specs = _ruleset_specs(cfg)
-    entries = Manifest(cfg.manifest, GitHub(cfg, use_cache=True)).entries()
-    picked = [
-        (r, wanted)
-        for r in _local_repos(cfg, args.repo, args.space)
-        if not cfg.is_deprecated_name(r.name)
-        and (wanted := applicable_rulesets(specs, _tier_of(entries.get(r.name)), r.path))
-    ]
-    with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
-        nested = list(ex.map(lambda p: ruleset_findings(cfg, p[0].name, p[1], args.fix), picked))
-    findings = [f for group in nested for f in group]
-    data: dict[str, object] = {
-        "rulesets": [s.name for s in specs],
-        "repos": [r.name for r, _ in picked],
-        "findings": [f.as_dict() for f in findings],
-        "open": sum(f.status in {"open", "failed"} for f in findings),
-        "fixed": sum(f.status == "fixed" for f in findings),
-    }
-    emit(
-        args,
-        data,
-        lambda: "\n".join(
-            [f"{len(picked)} product repos carry rulesets; {data['open']} open, {data['fixed']} fixed"]
-            + [
-                f"  [{f.kind}] {f.repo}: {f.detail} ({f.status})" + (f": {f.error}" if f.error else "")
-                for f in findings
-            ],
-        ),
-    )
-    return 1 if data["open"] else 0
 
 
 def _tier_of(entry: Mapping[str, object] | None) -> str | None:
@@ -10385,7 +10175,6 @@ DOCTOR_CHECKS: dict[str, list[str]] = {
     "agents-sync": [sys.executable, str(SELF), "agents-sync", "--check", "--json"],
     "hooks-sync": [sys.executable, str(SELF), "hooks-sync", "--check", "--json"],
     "checks-sync": [sys.executable, str(SELF), "checks-sync", "--check", "--json"],
-    "rulesets": [sys.executable, str(SELF), "rulesets", "--json"],
     "gitnexus-sync": [sys.executable, str(SELF), "gitnexus-sync", "--check", "--json"],
     "tooling-sync": [sys.executable, str(SELF), "tooling-sync", "--check", "--json"],
     "control-pointers": [sys.executable, str(SELF), "control-pointers", "--json"],
@@ -10403,7 +10192,6 @@ DOCTOR_REPAIRS: dict[str, list[str]] = {
     "agents-sync": [sys.executable, str(SELF), "agents-sync", "--json"],
     "hooks-sync": [sys.executable, str(SELF), "hooks-sync", "--json"],
     "checks-sync": [sys.executable, str(SELF), "checks-sync", "--json"],
-    "rulesets --fix": [sys.executable, str(SELF), "rulesets", "--fix", "--json"],
     "gitnexus-sync": [sys.executable, str(SELF), "gitnexus-sync", "--json"],
     "tooling-sync": [sys.executable, str(SELF), "tooling-sync", "--json"],
     "beads-setup --all": [sys.executable, str(SELF), "beads-setup", "--all", "--json"],
@@ -10516,7 +10304,6 @@ def _doctor_findings(check: str, data: dict[str, object]) -> list[DoctorFinding]
         "deprecated-prs",
         "environment",
         "python-names",
-        "rulesets",
         "tiers",
     }:
         rows = [_map(f, "finding") for f in _seq(data.get("findings") or [], "findings")]
@@ -11137,7 +10924,6 @@ def build_parser() -> argparse.ArgumentParser:
     _add_repo_commands(add)
     _add_upkeep_commands(add)
     _add_tooling_commands(add)
-    _add_rulesets_command(add)
     _add_tier_commands(add)
     _add_templates_check_command(add)
     return p
@@ -11398,18 +11184,6 @@ def _add_checks_sync_command(add: Callable[[str, str], argparse.ArgumentParser])
     s.add_argument("--space", help="only this app space (default: every app space)")
     s.add_argument("--trailer", help="a line to end each commit message with")
     s.set_defaults(func=cmd_checks_sync)
-
-
-def _add_rulesets_command(add: Callable[[str, str], argparse.ArgumentParser]) -> None:
-    """Add rulesets."""
-    s = add(
-        "rulesets",
-        "check that every product repo carries the project's GitHub rulesets (rulesets.files)",
-    )
-    s.add_argument("--fix", action="store_true", help="create or correct each ruleset that is missing or differs")
-    s.add_argument("--repo", action="append", help="only this repo (repeatable)")
-    s.add_argument("--space", help="only this app space (default: every app space)")
-    s.set_defaults(func=cmd_rulesets)
 
 
 def _add_tooling_commands(add: Callable[[str, str], argparse.ArgumentParser]) -> None:
