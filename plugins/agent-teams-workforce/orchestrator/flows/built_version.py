@@ -14,6 +14,7 @@ from matrixquery import StoryScope, story_scope
 from matrixstore import Matrix, as_entry_id, matrix_path, read_matrix
 from step_journal_contract import StepId
 from typeguard import check_type
+from vaultgit import commit_paths
 
 from orchestrator.core import step_journal, tool_locks
 from orchestrator.core.handback_contract import OTHER_CAUSE
@@ -108,6 +109,16 @@ def _ds(run: StepRun, tail: list[str]) -> dict[str, JsonValue]:
 
     """
     return depscore(run.tools, run.step.get("script", "built-version"), _args(run), tail)
+
+
+def _commit(run: StepRun, files: list[str], action: str) -> None:
+    """Commit and push the architecture files this step accepted, and nothing else in the vault.
+
+    The commit message is ``docs(architecture): <action> of Story <bead>``.
+    """
+    if files:
+        message = f"docs(architecture): {action} of Story {run.context.bead}"
+        run.tools.portfolio(str(run.step.get("script", "built-version")), commit_paths, _root(run), files, message)
 
 
 def _strings(value: JsonValue) -> list[str]:
@@ -372,6 +383,7 @@ def _accept_comparison(run: StepRun) -> Completion:
         if state.get("refused") or state.get("failed") or bad_states:
             msg = "compare"
             raise StepError(msg, OTHER_CAUSE, (f"built views must be in-review: {state}",))
+    _commit(run, [*files, *measured["deleted"]], "record the in-review built views")
     additions = (addition("deploy:built-correct"), addition("deploy:built-review")) if files else ()
     artifacts = (
         value_artifact("differences", list(differences)),
@@ -449,6 +461,7 @@ def _accept_correction(run: StepRun) -> Completion:
     if previous and not changed_since:
         msg = "correct"
         raise StepError(msg, OTHER_CAUSE, ("correction changed no file in response to findings",))
+    _commit(run, touched, "correct the architecture to the built views")
     return Completion(
         artifacts=(
             value_artifact("architectureUpdate", update),
@@ -610,6 +623,7 @@ def _approve(run: StepRun) -> Completion:
     if uncarried or result.get("refused") or result.get("failed"):
         msg = "approve"
         raise StepError(msg, OTHER_CAUSE, (f"architecture promotion refused: {result}",))
+    _commit(run, files, "set effective the reviewed correction")
     return Completion(artifacts=(value_artifact("approval", json_object(result["summary"])),))
 
 

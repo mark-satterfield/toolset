@@ -20,7 +20,7 @@ which puts it back from that copy.
 architecture directory (`arc42/`, `detailed/`, `target/`, `built/` and the rest), so a step
 measures what its sessions wrote.
 `depscore.py arch-built-remove` runs `remove_built`, which deletes the `built/<element>/` files
-the effective version has been corrected to match, and commits the removal.
+the effective version has been corrected to match, and commits and pushes the removal.
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ if TYPE_CHECKING:
     import _hashlib
 
 from archcatalog import split_frontmatter
-from archgit import git_result, run_git
+from archgit import git_result
 from contracts import (
     BuiltRemoval,
     ConstraintRestore,
@@ -52,6 +52,7 @@ from contracts import (
     TreeSnapshot,
 )
 from typeguard import CollectionCheckStrategy, check_type, typechecked
+from vaultgit import commit_paths
 
 # The target report contract is generated into the artifact-handoff skill, its one definition;
 # the path is declared here rather than inherited from another import.
@@ -647,13 +648,12 @@ def remove_built(
     message: str,
     execution_id: str = "",
 ) -> BuiltRemoval | Refusal:
-    """Delete built files the effective version now matches, and commit the removal.
+    """Delete built files the effective version now matches, and commit and push the removal.
 
-    Every file must sit inside a subject folder under `<arch_root>/built/`. Tracked files are
-    removed with `git rm` and committed on their own (`git commit -- <paths>`), so changes
-    staged elsewhere in the repository stay out of the commit; files git does not track are
-    deleted from disk. A subject folder left empty is deleted. A file already gone is
-    reported, not refused.
+    Every file must sit inside a subject folder under `<arch_root>/built/`. The files are deleted
+    from disk and the deletion of those git tracks is committed on its own and pushed
+    (``vaultgit.commit_paths``), so changes elsewhere in the vault stay out of the commit. A
+    subject folder left empty is deleted. A file already gone is reported, not refused.
 
     Args:
         arch_root: The architecture directory holding `built/`.
@@ -662,7 +662,7 @@ def remove_built(
         execution_id: The pipeline execution identity recorded on the commit.
 
     Returns:
-        `ok`, the refusals, the files removed and already gone, the commit, and git's output.
+        `ok`, the refusals, the files removed and already gone, and the commit made or pushed.
 
     Raises:
         TypeError: An argument violates the declared input contract.
@@ -692,10 +692,6 @@ def remove_built(
             [f"not inside a subject folder under {built}: {', '.join(outside)}"],
         )
 
-    @typechecked(collection_check_strategy=CollectionCheckStrategy.ALL_ITEMS)
-    def git(*argv: str) -> subprocess.CompletedProcess[str]:
-        return run_git(root, *argv, execution_id=execution_id)
-
     present: list[Path] = [f for f in wanted if f.exists()]
     gone: list[str] = [str(f) for f in wanted if not f.exists()]
     report: BuiltRemoval = {
@@ -706,26 +702,11 @@ def remove_built(
         "gone": gone,
         "commit": None,
     }
-    tracked: list[str] = [str(path) for path in present if git("ls-files", "--", str(path)).stdout.strip()]
-    if tracked:
-        git("rm", "-q", "--", *tracked)
     for f in present:
-        if f.exists():
-            f.unlink()
+        f.unlink()
         report["removed"].append(str(f))
     _remove_empty_subjects(built, present)
-    pending: str = git(
-        "diff",
-        "--cached",
-        "--name-only",
-        "--diff-filter=D",
-        "--",
-        *(str(f) for f in wanted),
-    ).stdout.strip()
-    if tracked or pending:
-        git("commit", "-q", "-m", message, "--", *(str(f) for f in wanted))
-        head: subprocess.CompletedProcess[str] = git("rev-parse", "--short", "HEAD")
-        report["commit"] = head.stdout.strip() or None
+    report["commit"] = commit_paths(root, [str(f) for f in wanted], message, execution_id=execution_id)
     report["summary"] = {
         "ok": True,
         "removed": len(report["removed"]),

@@ -171,6 +171,10 @@ request as the parameter `request`, so a pass starts at most three maintainers a
 neighbouring document once for every fact of its group. The maintainer steps run at the same
 time, after the step that planned them and before the index.
 
+The step that accepts a maintainer's result sets each document it names `in-review`, syncs their
+matrix entries, then commits and pushes exactly those documents in the vault
+(`vaultgit.commit_paths`), so every document write is committed by the step that wrote it.
+
 A maintainer's output check renders, once, each Mermaid block of the documents its result and
 request name (`architecture_files.written_paths`) that the vault's last commit does not hold,
 with the `architecture-diagramming` skill's `scripts/render-check.sh`, into
@@ -318,7 +322,7 @@ into the vault at `<architectureRoot>/review-logs/<epic id>.json`, mirrors the d
 lifecycle in the matrix (`sync-documents --paths`; the matrix holds no folder index), links the log from the Epic's matrix entry
 (attribute `reviewLog`: its path in the vault and its SHA-256), removes each disagreement settled
 in this run whose losing statement a maintainer step corrected, commits and pushes those
-documents and the log in the vault (each that exists or that git tracks). The matrix stays local.
+documents and the log in the vault (each that exists or that git tracks; `vaultgit.commit_paths`). The matrix stays local.
 It writes `<arch-work>/promoted.json` and records it as the file `promoted documents`,
 with the value `vault commit` when a commit was made. A document other than
 a folder index whose matrix entry does not show it effective is recorded as an `architecture-check-carried` finding for the Epic, naming each with the reason; anything else that fails ends

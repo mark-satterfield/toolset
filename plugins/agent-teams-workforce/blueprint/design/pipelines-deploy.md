@@ -399,6 +399,11 @@ Notes on the diagram:
   file, and the deploy goes on to the pull request. A write outside the Story's bounds, a change
   to section 2 or a promotion the architecture tool refuses for another reason still fails the
   Story.
+- Each built-version step that writes the vault commits and pushes exactly what it wrote
+  (`vaultgit.commit_paths`): the accepted comparison its `built/<element>/` views, the accepted
+  correction the effective documents it changed, the approval the documents it set effective, and
+  the removal (`archstate.remove_built`) the built views it deleted
+  ([pipelines.md](pipelines.md), "Every vault write is committed and pushed by the step that wrote it").
 - The comparison runs after the deployment works and before the pull request, so the record
   describes what was deployed and works.
 - The comparer's subject in its own file is "Compare the code one Story built with the approved

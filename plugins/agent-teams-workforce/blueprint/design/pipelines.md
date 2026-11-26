@@ -172,6 +172,29 @@ A deterministic step sets verified on what a Story built and tested when the Sto
 before and apart from its merge ([pipelines-architecture-states.md](pipelines-architecture-states.md),
 section 3).
 
+### Every vault write is committed and pushed by the step that wrote it
+
+Every file in the `skillspoke-docs` vault that a pipeline step writes is committed and pushed by
+that step, before the step is done, 100% of the time. The step names exactly the paths it wrote to
+`scripts/portfolio/vaultgit.py` `commit_paths`, which stages only those paths (one that exists or
+that git tracks; a deleted one is committed as deleted), commits them on the vault's `main` with
+the `Pipeline-Run:` trailer, and pushes; a rejected push is rebased onto `origin/main`
+(`--autostash`) and pushed again, and a git command another process blocks with the index lock
+runs again (`archgit.run_git`). Another session's uncommitted edits elsewhere in the vault stay out
+of the commit. A commit or push that still fails fails the step. The writers:
+
+| Step | What it writes | Where the commit is made |
+|---|---|---|
+| Elaboration: each `architecture-maintainer` step | the arc42 and detailed documents its result and request name, set `in-review` | the step that accepts its result (`architecture.maintainer`, after `_sync`) |
+| Elaboration: promotion | the documents set `effective`, and the review log | `architecture_promotion.promote` |
+| Driver: filing after `ELABORATION_DONE` | the TRD and the Spec documents | `lane._file_artifacts`, through `artifactio.commit_in_vault` |
+| Deploy: built-version comparison | the in-review views under `built/<element>/` | `built_version._accept_comparison` |
+| Deploy: built-version correction | the effective documents the maintainer corrected | `built_version._accept_correction` |
+| Deploy: built-version approval | the documents `arch-approve` set effective | `built_version._approve` |
+| Deploy: built-version removal | the matched built views it deletes | `archstate.remove_built` (`depscore.py arch-built-remove`) |
+
+The `filing-clerk` agent commits and pushes what it files itself.
+
 ## Repository Beads integration
 
 `polyrepo beads-setup` creates databases with `bd bootstrap`, which does not install Git hooks. Immediately before its existing `bd doctor --fix --yes` call, `_beads_converge` sets `doctor.suppress.git-hooks`, `doctor.suppress.pending-migrations` and `doctor.suppress.hooks-path` to `true` with `bd config set` and requires each command to succeed. Doctor filters the three hook warnings before automatic repairs. Other doctor repairs, quality hooks, GitNexus hooks and `refs/dolt/data` synchronization keep their existing paths. Fleet database setup never uses `bd init`; upstream supports `--skip-hooks` for that command.

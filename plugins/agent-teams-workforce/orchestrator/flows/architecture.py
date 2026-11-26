@@ -79,6 +79,7 @@ from matrixsync import (
 from matrixtraverse import epic_id
 from matrixwrite import apply_changes, apply_design_change, changed_since, link, put, withdraw_approval
 from specialist_catalog import agent_names
+from vaultgit import commit_paths
 
 from orchestrator.core import step_journal
 from orchestrator.core.agents import check_files, strict_json
@@ -1626,6 +1627,13 @@ def maintainer(run: StepRun) -> AgentLaunch:
         paths: list[str] = written_paths(arch, request, written)
         if paths:
             accepted.tools.portfolio(accepted.inputs.stage, _sync, arch, paths)
+            accepted.tools.portfolio(
+                accepted.inputs.stage,
+                commit_paths,
+                arch,
+                [arch / relative for relative in paths],
+                f"docs(architecture): write the in-review architecture of {accepted.bead} from {asked.name}",
+            )
         recorded: Recorded = accepted.tools.portfolio(accepted.inputs.stage, _record_homes, arch, request, written)
         if recorded.problems:
             _carry(

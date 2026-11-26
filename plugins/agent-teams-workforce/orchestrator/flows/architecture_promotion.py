@@ -30,6 +30,7 @@ from matrixsync import LIFECYCLE_EFFECTIVE, folder_index, relative_path, set_lif
 from matrixtraverse import architecture_review_scope, epic_id
 from matrixwrite import approve
 from step_journal_contract import STATUS_DONE
+from vaultgit import commit_paths
 
 from orchestrator.core import step_journal
 from orchestrator.core.io import write_json
@@ -64,8 +65,6 @@ if TYPE_CHECKING:
 
 PROMOTED: Final = "promoted documents"
 VAULT_COMMIT: Final = "vault commit"
-BRANCH: Final = "main"
-REMOTE: Final = "origin"
 ATTR_LIFECYCLE: Final = "lifecycle"
 ATTR_STANDS: Final = "stands"
 ATTR_REVIEW_LOG: Final = "reviewLog"
@@ -193,47 +192,6 @@ def _promote(
     )
 
 
-def _commit_vault(run: StepRun, vault: Path, paths: list[str], message: str) -> str | None:
-    """Commit named paths of the vault and push them.
-
-    Only the named paths that exist or that git tracks are staged and committed, so a document
-    that was never created is left out and one that was deleted is committed as deleted; when no
-    named path is left, nothing is staged, since git would stage the whole vault. The
-    branch is pushed when this call made a commit or an earlier one was left unpushed.
-
-    Returns:
-        The commit this call made or pushed, or None when the paths held nothing to commit and
-        nothing was left to push.
-
-    """
-    tracked: set[str] = set(
-        run.tools.command(["git", "ls-files", "-z", "--", *paths], stage=PROMOTE, cwd=vault).stdout.split("\0"),
-    )
-    named: list[str] = [path for path in paths if (vault / path).exists() or path in tracked]
-    made: str | None = None
-    staged: str = ""
-    if named:
-        run.tools.git(vault, ["add", "-A", "--", *named], stage=PROMOTE)
-        staged = run.tools.command(
-            ["git", "diff", "--cached", "--name-only", "--", *named],
-            stage=PROMOTE,
-            cwd=vault,
-        ).stdout.strip()
-    if staged:
-        run.tools.git(vault, ["commit", "-q", "-m", message, "--", *named], stage=PROMOTE)
-        made = run.tools.command(["git", "rev-parse", "HEAD"], stage=PROMOTE, cwd=vault).stdout.strip()
-    ahead = run.tools.command(
-        ["git", "rev-list", "--count", f"{REMOTE}/{BRANCH}..HEAD"],
-        stage=PROMOTE,
-        cwd=vault,
-        check=False,
-    )
-    if made is not None or (ahead.exit == 0 and ahead.stdout.strip() != "0"):
-        run.tools.git(vault, ["push", REMOTE, BRANCH], stage=PROMOTE)
-        made = run.tools.command(["git", "rev-parse", "HEAD"], stage=PROMOTE, cwd=vault).stdout.strip()
-    return made
-
-
 def _corrected(run: StepRun) -> list[str]:
     """List the disagreements whose losing statement a document maintainer of this run corrected.
 
@@ -300,8 +258,9 @@ def promote(run: StepRun) -> Completion:
     write_json(path, record)
     artifacts: list[Artifact] = [file_artifact(PROMOTED, path)]
     vault: Path = run.tools.portfolio(PROMOTE, vault_root, arch)
-    made: str | None = _commit_vault(
-        run,
+    made: str | None = run.tools.portfolio(
+        PROMOTE,
+        commit_paths,
         vault,
         [relative_path(arch / relative, vault) for relative in sorted({*promoted.documents, promoted.review_log})],
         f"docs(architecture): set the approved architecture of {run.bead} effective, with its review log",
