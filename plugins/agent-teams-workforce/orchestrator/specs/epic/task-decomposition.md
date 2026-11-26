@@ -40,7 +40,7 @@ A Task cites what it builds by item id; `hierarchy.stated_ids` derives its matri
 the entries and the shared capabilities the matrix guesses that work relies on) from those items, and the decomposer
 states none. Its `dependsOn`
 (`repo_scoping.build_context`) is what the Tasks depend on, never work. A repository-side element
-is a hint read from code: it may tell a Task where existing code sits, never what to build.
+is a hint read from code, and nothing a Task states comes from it.
 
 ## The grouping check
 

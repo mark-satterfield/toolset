@@ -113,7 +113,7 @@ producers, as the project's event standard and the event's documents record it. 
 spec names no routing rule or target. Name each dependency's contract from `dependsOn`. State
 under "Shared capabilities used" which contract uses which shared capability, and specify no
 behaviour that a shared capability provides. Do not search code to decide which work can be
-omitted. Write nonempty UTF-8 Markdown with a YAML front matter whose `decisionIds` cite the views
+omitted, and describe no code the repository holds today. Write nonempty UTF-8 Markdown with a YAML front matter whose `decisionIds` cite the views
 you read, each a quoted YAML string as the schema's `Citation` definition says. The front matter's shape is artifact-handoff's
 `schemas/document-front-matter.schema.json#/$defs/SpecDocument`: write exactly the shape that schema defines, and no other fields.
 If this surface is not applicable, state why in a short document rather than inventing work.

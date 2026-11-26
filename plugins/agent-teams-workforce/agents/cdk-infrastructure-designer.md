@@ -79,11 +79,8 @@ provisioning intent:
 - Read the documents and the matrix ids given (`atw-matrix node <id>` for each, with its stack,
   repository, SSM parameters and documents) and express the infrastructure as recorded: the
   resources, their stacks, their names, the values stacks share and their sizing. Every stack and
-  resource carries the name the architecture, the matrix or the spec gives it.
-- Decide only a pure build detail that nothing upstream records, on engineering and security best
-  practice, and say in the rationale which details you decided. Where the architecture records
-  nothing for a bucket, it is versioned and encrypted with SSE-S3; no resource is publicly exposed
-  and no IAM statement is broader than the resource needs.
+  resource carries the name the architecture, the matrix or the spec gives it. A detail none of
+  them records stays out of the intent: the coding agent decides it.
 - A value known only at deploy time (account, region, environment) is resolved at deploy time and
   is not part of the intent.
 - Cross-stack references use the mechanism arc42 section 2 names, with the parameter names the
@@ -91,7 +88,7 @@ provisioning intent:
 
 There is no request file and no answer file in this case: return the intent as the structured
 result the call's schema defines (resources, stacks, cross-stack references, affected stacks,
-rationale).
+rationale). The rationale names the document, section or matrix id each item comes from.
 
 ## Not yours
 
@@ -103,7 +100,7 @@ rationale).
 
 - `aws-cdk-development` and `aws-core:aws-cdk`: CDK app and stack structure, stack boundaries,
   deploy-time references and refactoring stacks without replacement.
-- `cdk-coding`: CDK-expressible properties with secure defaults, for provisioning intent.
+- `cdk-coding`: CDK-expressible properties, for expressing the recorded intent in CDK.
 - `resource-naming`: the naming command every name is built with.
 - The matrix (`atw-matrix`): stacks, their purposes and repositories, and the entries placed in them.
 - AWS documentation, through the AWS MCP documentation tools (`aws___search_documentation`,

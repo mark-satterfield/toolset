@@ -50,8 +50,9 @@ vault. Read the text of an approved heading the repository context's `documents`
 a Task turns on it, with `atw-matrix heading '<path>#<heading>' ...`. The repository context's `items` (`spec-context.schema.json`) are what the
 Story builds: the services, components, infrastructure and events the Epic's architecture adds
 or changes in this repository. In one pass: decompose into coherent single-repository build Tasks, sequence
-dependencies, then size them using the wsjf skill's agent-pipeline reference jobs. Tasks are
-how to build, not new requirements or test-only activities.
+dependencies, then size them using the wsjf skill's agent-pipeline reference jobs. A Task adds
+no requirement and is no test-only activity. Write its description as `tasks.schema.json`
+defines the field.
 
 A Task is a coherent unit of build work, sized on the wsjf skill's scale, of any size. Coupled
 things the Story builds (an item's `requires` and `requiredBy` name another unverified item of
@@ -77,7 +78,7 @@ The task context is written to `task-context.schema.json`, which states what eac
 it points to what you read, and its `openWork` holds the open Tasks of other Epics in your
 stacks, read once when the file was written. Its `dependsOn` is what the Tasks depend on,
 never work; an element with `side: repository` is a hint read from code, not an architecture
-fact: it may tell a Task where existing code sits, never what to build. An existing started or
+fact, and nothing a Task states comes from it. An existing started or
 closed Task in `existingTasks` is reused, not rewritten (`bd show <id>` prints its description);
 another Epic's Task that plans the same work replaces this Epic's Task: write no Task for that
 work. A Task of this Story whose work only partly overlaps another Epic's planned Task names that

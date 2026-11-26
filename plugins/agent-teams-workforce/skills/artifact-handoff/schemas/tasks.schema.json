@@ -21,6 +21,7 @@
             "maxLength": 500
           },
           "description": {
+            "description": "The outcome the Task's build delivers and what it builds, by name, with the spec sections that state what must be true of it. It restates no spec detail, describes no code the repository holds today, and says nothing about how to code the work, which the coding agents decide from the cited spec.",
             "type": "string"
           },
           "type": {

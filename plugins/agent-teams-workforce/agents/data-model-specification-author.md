@@ -111,7 +111,7 @@ PRD the context names only to read a heading a TRD requirement cites, when the r
 text does not settle a detail. `dependsOn` is context, never work. A spec that changes a contract
 the repository holds names its file from the pack's `contractFiles`.
 
-Specify every data item the Story builds without judging existing code satisfied. State under
+Specify every data item the Story builds without judging existing code satisfied or describing it. State under
 "Shared capabilities used" which contract uses which shared capability, and specify no behaviour
 that a shared capability provides. Write the assigned nonempty UTF-8 data-model document with
 exact source references and a YAML front matter whose `decisionIds` cite them, each a quoted YAML

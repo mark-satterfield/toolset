@@ -53,8 +53,9 @@ their shape. End your session with the answer file's path as your only final mes
 answer is in the file, and the architect reads it there.
 
 Work at the levels of `effective-architecture/review-standard.md`. Existing code is a hint of
-how something was once solved; only the code of the elements the request lists as trusted is
-expected to match the architecture. Establish AWS behaviour from AWS documentation: search with
+how something was once solved, never a fact of the design: a design keeps nothing because code
+has it. Only the code of the elements the request lists as trusted is expected to match the
+architecture. Establish AWS behaviour from AWS documentation: search with
 `aws___search_documentation`, read the page with `aws___read_documentation`, and use
 `aws___get_regional_availability` when a choice depends on a service or feature being available
 in the target region. Cite each source next to the claim it supports.

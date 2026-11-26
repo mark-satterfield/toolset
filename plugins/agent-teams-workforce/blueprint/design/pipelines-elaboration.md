@@ -680,8 +680,8 @@ on how to do anything that was already concluded upstream in the elaboration (an
 pipeline. And when I say task, I also mean spec.", "all details do not need to be copied into the
 tasks and specs (file paths, URLs, etc. can be used to point to the more detailed information)",
 "I don't want to encourage an agent to start naming things, when the names should have already
-been provided in the task (or spec)." and "The matrix does not include stories and tasks (it isn't
-a build tracker)".
+been provided in the task (or spec).", "The matrix does not include stories and tasks (it isn't
+a build tracker)" and "the architecture, spec and tasks writers shouldn't try enforcing coding".
 
 ```mermaid
 flowchart TD
@@ -689,7 +689,7 @@ flowchart TD
     each --> story["Spec and its Story created together - one Story bead, one repository, under the Epic"]
     story --> dec["Task decomposition, for example task-decomposer, splits the Story into Tasks"]
     dec --> size["Each Task is one coherent change in one repository that one build run can make and test"]
-    size --> content["Each Task states what it builds with the matrix ids for the stack, components and shared capabilities, the names and decisions recorded upstream or pointers to them, and links to its Spec and to the full architecture and design of its component"]
+    size --> content["Each Task states what it builds with the matrix ids for the stack, components and shared capabilities, the names and decisions recorded upstream or pointers to them, and links to its Spec and to the full architecture and design of its component; never how to code it"]
     content --> order["Build dependencies between Tasks found from the matrix: a Task depends on another that builds an entry it uses, such as a stack, a library or an SSM parameter. Recorded as dependency edges in beads"]
     order --> score["Tasks scored and ordered"]
     score --> write["Story and Tasks written to beads. The matrix records neither"]
