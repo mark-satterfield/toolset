@@ -236,11 +236,19 @@ class InputsResult(TypedDict):
     inputs: list[InputArtifacts]
 
 
+class InvalidJournal(TypedDict):
+    """One journal file ``validate`` found not to conform, with every problem found in it."""
+
+    journal: str
+    problems: list[str]
+
+
 class ValidationResult(TypedDict):
-    """What ``validate`` prints."""
+    """What ``validate`` prints: whether every journal checked conforms, and those that do not."""
 
     valid: bool
-    problems: list[str]
+    checked: int
+    invalid: list[InvalidJournal]
 
 
 class RecordResult(TypedDict):
@@ -2455,16 +2463,70 @@ def _run_invalidate(args: argparse.Namespace) -> Outcome:
     return Outcome(result)
 
 
-def _run_validate(args: argparse.Namespace) -> Outcome:
-    """Run ``validate``.
+def _validate_paths(args: argparse.Namespace) -> list[Path]:
+    """Resolve the journal files ``validate`` checks.
 
     Returns:
-        Whether the journal file conforms and every problem found; the status is the refusal
-        status when it does not conform.
+        Every ``--journal`` given, then the file of ``--bead`` inside ``--dir`` or, without
+        ``--bead``, every journal file directly inside ``--dir`` in name order.
+
+    Raises:
+        StepJournalError: No journal was named, ``--bead`` was given without ``--dir``, or
+            ``--dir`` is not a directory.
 
     """
-    problems: list[str] = file_problems(_journal_argument(args))
-    return Outcome({"valid": not problems, "problems": problems}, EXIT_REFUSED if problems else EXIT_OK)
+    journals: list[Path] = [Path(str(journal)) for journal in (getattr(args, "journal", None) or [])]
+    directory: str | None = _option(args, "dir")
+    bead: str | None = _option(args, "bead")
+    message: str
+    if bead is not None and directory is None:
+        message = "--bead names a journal inside --dir; give --dir too"
+        raise StepJournalError(message)
+    if directory is None:
+        if not journals:
+            message = "give one or more journal files with --journal, or their directory with --dir"
+            raise StepJournalError(message)
+        return journals
+    folder: Path = Path(directory)
+    if bead is not None:
+        return [*journals, journal_path(folder, BeadId(bead))]
+    if not folder.is_dir():
+        message = f"--dir {folder} is not a directory"
+        raise StepJournalError(message)
+    return [*journals, *sorted(folder.glob(f"*{JOURNAL_SUFFIX}"))]
+
+
+def _journal_problems(path: Path) -> list[str]:
+    """Describe every way one journal file fails the contract, an unreadable file included.
+
+    Args:
+        path: The journal file.
+
+    Returns:
+        The problems :func:`file_problems` finds, or why the file could not be read.
+
+    """
+    try:
+        return file_problems(path)
+    except StepJournalError as error:
+        return [str(error)]
+
+
+def _run_validate(args: argparse.Namespace) -> Outcome:
+    """Run ``validate`` over every journal file the command line names, in one process.
+
+    Returns:
+        Whether every journal conforms, how many were checked, and each journal that does not
+        conform with its problems; the status is the refusal status when any does not conform.
+
+    """
+    paths: list[Path] = _validate_paths(args)
+    checked: list[tuple[Path, list[str]]] = [(path, _journal_problems(path)) for path in paths]
+    invalid: list[InvalidJournal] = [
+        InvalidJournal(journal=str(path), problems=problems) for path, problems in checked if problems
+    ]
+    result: ValidationResult = ValidationResult(valid=not invalid, checked=len(paths), invalid=invalid)
+    return Outcome(result, EXIT_REFUSED if invalid else EXIT_OK)
 
 
 def _run_record(args: argparse.Namespace) -> Outcome:
@@ -2573,7 +2635,16 @@ def _parser() -> argparse.ArgumentParser:
         parents=[where, step],
         help="set a step and every step after it back to planned",
     )
-    commands.add_parser("validate", parents=[where], help="check a journal file against the contract")
+    validate: argparse.ArgumentParser = commands.add_parser(
+        "validate",
+        help="check journal files against the contract in one process",
+    )
+    validate.add_argument("--journal", action="append", help="a journal file; repeatable")
+    validate.add_argument(
+        "--dir",
+        help=f"a directory: with --bead its journal for that bead, otherwise every *{JOURNAL_SUFFIX} in it",
+    )
+    validate.add_argument("--bead", help="the bead id; with --dir it names one journal file")
     record: argparse.ArgumentParser = commands.add_parser(
         "record",
         parents=[where],
@@ -2595,7 +2666,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     Returns:
         0 after printing the result as one JSON object on stdout; 1 after printing why the
         journal refused, or what does not conform, on stderr. ``validate`` prints its JSON
-        object either way and returns 1 for a journal that does not conform.
+        object either way and returns 1 when any journal it checks does not conform.
 
     """
     args: argparse.Namespace = _parser().parse_args(argv)
@@ -2607,7 +2678,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return EXIT_REFUSED
     sys.stdout.write(json.dumps(outcome.result, ensure_ascii=False) + "\n")
     if outcome.status != EXIT_OK:
-        sys.stderr.write(f"atw-step-journal {command}: the journal does not conform; see the problems on stdout\n")
+        sys.stderr.write(f"atw-step-journal {command}: a journal does not conform; see the problems on stdout\n")
     return outcome.status
 
 

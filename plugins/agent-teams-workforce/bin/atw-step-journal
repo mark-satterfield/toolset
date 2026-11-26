@@ -3,7 +3,9 @@
 # — reads and changes the step journal of one bead (the checklist of the steps a pipeline runs
 # for it). orchestrator/core/step_journal.py is the command; the journal's shape is
 # skills/pipeline-contracts/schemas/step-journal.schema.json. Give the journal file with
-# --journal, or its directory and bead with --dir and --bead. Prints one JSON object on stdout.
+# --journal, or its directory and bead with --dir and --bead; validate checks many journals in
+# one process: repeat --journal, or give --dir alone for every journal in that folder. Prints one
+# JSON object on stdout.
 # The command needs typeguard and jsonschema (scripts/requirements.txt), which the python3 on
 # PATH does not always have, so uv supplies them.
 set -euo pipefail
