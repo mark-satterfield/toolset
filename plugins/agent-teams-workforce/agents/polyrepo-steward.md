@@ -229,9 +229,9 @@ management your tool does.
 | Create a repo from a template, locally and on GitHub, with its tier, its beads setup and its stack in the matrix | `create <name> --space S [--template T] [--tier product\|tooling]` |
 | Record a repository's tier (see *Tiers*) | `set-tier <repo> product\|tooling` |
 | List every repository on disk whose manifest entry records a tier | `tiers` |
-| Rename a repo with every name it carries: locally and on GitHub, the `repository` of its stacks in the matrix, its stack ids and stack file names, its Python names (distribution, import package, source folder), every reference to them in the other repositories and the matrix, and, through the `filing-clerk` in the same job, the vault documents it lists (see *A rename covers every name*) | `rename <repo> <new-name>` (`--dry-run` prints the whole plan first) |
+| Rename a repo with every name it carries: locally and on GitHub, the `repository` of its stacks in the matrix, its stack ids and stack file names, its Python names (distribution, import package, source folder), every reference to them in the other repositories and the matrix (see *A rename covers every name*) | `rename <repo> <new-name>` (`--dry-run` prints the whole plan first) |
 | Bring the stack and Python names of repositories to what the naming command gives, without renaming them; report every repository whose Python names or layout differ | `rename <repo> [--also <repo>…]`; `python-names` |
-| Deprecate a repo (renames it, closes its open pull requests, deletes its local clone, lists the vault documents that carry its old name for the `filing-clerk`, which updates them in the same job); it refuses while the matrix has a stack in it | `deprecate <repo>` |
+| Deprecate a repo (renames it, closes its open pull requests, deletes its local clone); it refuses while the matrix has a stack in it | `deprecate <repo>` |
 | Close open pull requests left in deprecated repos | `deprecated-prs --fix` (also run by `doctor --fix`) |
 | Archive a deprecated repo | automatic: `archive-due` archives it `deprecation.archive_after_days` (`.polyrepo/config.yaml`) days after `deprecated_on`, every day through the project's scheduled `archive-due` job (a launchd agent) and in `doctor --fix`; run `archive-due` (`--dry-run` to see what is due) only to archive one at once |
 | Check a name for a new or renamed repository with the naming command, read-only, and see the kind, tokens, type and placement | `naming <name>` |
@@ -311,8 +311,7 @@ records no tier.
 
 A repository's name is not the only name that follows from it. A rename covers the repository
 (clone and GitHub), the stack ids and stack file names inside it, the Python names, every
-reference to them in the other repositories, the architecture documents and the matrix.
-The architecture documents are in the vault, so the `filing-clerk` changes them, not you.
+reference to them in the other repositories and the matrix.
 
 Every Python name comes from the naming command `ATW_NAMING_COMMAND` (the `resource-naming` skill): `name repository-names <repo>` gives a repository's stack, stack file, source package, import package and distribution; never compose one by hand and never second-guess what it gives.
 
@@ -336,18 +335,8 @@ is reported. Nothing is merged. `--skip-repo R` is for
 a repository the owner has put off limits: its references are listed and not edited.
 `--keep-src R` edits a repository except its files under `src/`, which are listed.
 
-The architecture follows through the `filing-clerk`. The tool never edits the vault: `rename`
-reports, under `names.documents.carry_old_names`, and `deprecate`, under
-`documents.carry_old_names`, both also as `vault document for the filing-clerk` lines, every
-vault document that still carries an old name, with its lines and the names, from the vault
-folders the config's `rename.documents` points at (`root`, `paths`). In the same job, right
-after the command, hand the filing-clerk every old name with its new name and those documents;
-it changes the names only, no other word, commits and pushes the vault, and reports the
-documents it changed. The rename or deprecation is not finished, and you do not report it done,
-until the filing-clerk has updated and pushed every listed document. The tool re-keys in the matrix each
-published package it holds (`atw-matrix rename --from package:<old> --to package:<new>`) and
-updates the local matrix; once the filing-clerk has changed the documents, you run
-`atw-matrix sync-documents --paths` on them. A new library name is importable only once the library is published to
+The tool re-keys in the matrix each published package it holds
+(`atw-matrix rename --from package:<old> --to package:<new>`) and updates the local matrix. A new library name is importable only once the library is published to
 CodeArtifact, so publishing is the library's own declared publish command, which you never run by
 hand.
 
@@ -422,8 +411,7 @@ comment "Closed: this repository is deprecated.", its member is removed from the
 group (the group the config's `gitnexus` section names, from which the fleet is indexed) and its
 index is deleted (`gitnexus remove`), so a
 deprecated or archived repository is never indexed, and then its local clone and linked
-worktrees are deleted; the vault documents that carry the old name go to the filing-clerk in the
-same job (see *A rename covers every name*). A local clone with a deprecated name must always have an origin of
+worktrees are deleted. A local clone with a deprecated name must always have an origin of
 the same name on GitHub: the clone is kept, and the path to delete by hand is reported, unless it
 is verifiably a copy of that origin (the guard in the `deprecate` row of the `polyrepo-repo`
 skill, which every command that deletes a clone applies); otherwise it may be the only copy, and

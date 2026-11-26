@@ -223,8 +223,7 @@ agent-teams-workforce:polyrepo-steward`), which you use for nothing else:
 - **Repository questions go to the steward**, and so do the creation, rename or deprecation of
   a repository, which are its routine management of the fleet. Ask it instead of reading its
   files, and do not create, rename or deprecate a repository yourself.
-- **The steward hands you documentation work and every change to a vault document**,
-  including the names a repository rename changes in the arc42 documents, and asks you
+- **The steward hands you documentation work and every change to a vault document**, and asks you
   where something is documented. File, change or answer it as you would for the owner.
   Work the steward sent you is never handed back to it.
 - **A service rename you make in arc42 goes to the steward in the same job**: hand it the

@@ -152,7 +152,6 @@ from name_sweep import (
     SweepTarget,
     adjust_pyproject,
     apply_moves,
-    build_document_rules,
     build_rules,
     change_label,
     normalize,
@@ -6243,9 +6242,7 @@ def cmd_rename(args: argparse.Namespace, cfg: Config) -> int:
     one commit and one pull request opened with the project's PR command; the plan lists all
     of it first (`--dry-run` stops there). With no new name only the stack and Python names
     are brought into line, and `--also` brings those of further repositories into line in the
-    same pull requests, so a repository that several names change still gets one. The vault
-    documents that still carry an old name (in the folders the config's `rename.documents`
-    names) are reported under `names.documents`, never edited: the filing-clerk changes them.
+    same pull requests, so a repository that several names change still gets one.
     Anything else outside git, GitHub, the repositories and the steward's records that names the
     repo by its old name (workflow artifacts) is the caller's to update.
 
@@ -6324,18 +6321,6 @@ class _Subject:
 
 
 @dataclasses.dataclass
-class _Documents:
-    """The vault documents that still carry an old name: the vault, the folders searched, what each carries.
-
-    A rename reports them and edits none: the filing-clerk changes the vault.
-    """
-
-    root: Path
-    paths: tuple[str, ...]
-    found: list[FileEdit]
-
-
-@dataclasses.dataclass
 class _NamesPlan:
     """The names a rename changes and every repository it touches."""
 
@@ -6345,7 +6330,6 @@ class _NamesPlan:
     paths: dict[str, Path]
     held_back: dict[str, list[tuple[str, FileEdit]]]
     waits_on: dict[str, list[str]]
-    documents: _Documents | None = None
     keep_src: set[str] = dataclasses.field(default_factory=set)
     branch_slug: str = SHARED_BRANCH_SLUG
 
@@ -6479,7 +6463,6 @@ def _names_plan(
     for s in subjects:
         s.changes = [c for c in s.changes if c.kind != "stack" or change_label(c) in hit]
     plan.waits_on = _waits_on(plan)
-    plan.documents = _names_documents_plan(st.cfg, subjects)
     return plan
 
 
@@ -6532,51 +6515,6 @@ def _waits_on(plan: _NamesPlan) -> dict[str, list[str]]:
     return waits
 
 
-def _documents_settings(cfg: Config) -> tuple[Path, tuple[str, ...]] | None:
-    """Read the config's `rename.documents` section: the vault folder and the folders in it a rename searches.
-
-    Returns:
-        (the vault's root, the folders under it), or None when the config names no documents.
-
-    Raises:
-        NameSweepError: when the section lacks an absolute root or the folders.
-
-    """
-    section = _map(cfg.raw.get("rename") or {}, "config rename")
-    documents = section.get("documents")
-    if not documents:
-        return None
-    spec = _map(documents, "config rename.documents")
-    root = Path(expand_env(str(spec.get("root") or ""))).expanduser()
-    paths = tuple(_strs(spec.get("paths") or [], "rename.documents.paths"))
-    if not root.is_absolute() or not paths:
-        msg = "config rename.documents needs an absolute root (environment variables allowed) and paths"
-        raise NameSweepError(msg)
-    return root, paths
-
-
-def _names_documents_plan(cfg: Config, subjects: list[_Subject]) -> _Documents | None:
-    """Find the vault documents that still carry an old name the subjects change, for the filing-clerk.
-
-    Names only: the rules are the ones for the repositories' own names, with the document
-    differences `build_document_rules` states. The search reads the vault and never writes it.
-
-    Returns:
-        The documents found, or None when the config names no vault folders or the vault is absent.
-
-    """
-    settings = _documents_settings(cfg)
-    if settings is None or not (settings[0] / ".git").exists():
-        return None
-    root, paths = settings
-    changes = [c for s in subjects for c in s.changes]
-    repository_of = {change_label(c): s.new for s in subjects for c in s.changes}
-    rules = build_document_rules(changes, repository_of)
-    excludes = _rename_settings(cfg)
-    found = sweep_repo(_sweep_git, SweepTarget("documents", root, paths), rules, excludes, write=False) if rules else []
-    return _Documents(root, paths, found)
-
-
 def _names_lines(plan: _NamesPlan) -> list[str]:
     """Write the plan as the lines the rename's steps carry.
 
@@ -6608,63 +6546,7 @@ def _names_lines(plan: _NamesPlan) -> list[str]:
             "kept": "source kept as is by --keep-src",
         }.get(why, "named by --skip-repo")
         lines.extend(f"not edited ({what}) {name}: {e.path}" for name, e in rows)
-    lines.extend(_documents_lines(plan.documents))
     return lines
-
-
-def _documents_lines(docs: _Documents | None) -> list[str]:
-    """Write the vault documents that still carry an old name as step lines for the filing-clerk.
-
-    Returns:
-        One line per document.
-
-    """
-    if docs is None:
-        return []
-    return [
-        f"vault document for the filing-clerk {e.path}: line(s) {', '.join(str(n) for n in e.lines)} "
-        f"carry {', '.join(sorted(e.labels))}"
-        for e in docs.found
-    ]
-
-
-def _documents_record(docs: _Documents | None) -> dict[str, object]:
-    """Write the vault documents that still carry an old name as JSON.
-
-    Returns:
-        The vault's root and each document with its lines and names; empty when no vault was searched.
-
-    """
-    if docs is None:
-        return {}
-    return {
-        "root": str(docs.root),
-        "carry_old_names": [
-            {"path": e.path, "lines": list(e.lines), "names": sorted(e.labels), "occurrences": e.replacements}
-            for e in docs.found
-        ],
-    }
-
-
-def _repository_documents(cfg: Config, old: str, new: str) -> _Documents | None:
-    """Find the vault documents that still carry a repository's old name, for the filing-clerk.
-
-    Returns:
-        The documents found, or None when the config names no vault folders or the vault is absent.
-
-    """
-    settings = _documents_settings(cfg)
-    if settings is None or not (settings[0] / ".git").exists():
-        return None
-    root, paths = settings
-    change = NameChange("repository", old, new)
-    rules = build_document_rules([change], {change_label(change): new})
-    excludes = _rename_settings(cfg)
-    return _Documents(
-        root,
-        paths,
-        sweep_repo(_sweep_git, SweepTarget("documents", root, paths), rules, excludes, write=False),
-    )
 
 
 def _names_record(plan: _NamesPlan) -> dict[str, object]:
@@ -6678,9 +6560,7 @@ def _names_record(plan: _NamesPlan) -> dict[str, object]:
     def rows(found: list[FileEdit]) -> list[dict[str, object]]:
         return [{"path": e.path, "replacements": e.replacements, "kinds": sorted(e.kinds)} for e in found]
 
-    documents = _documents_record(plan.documents)
     return {
-        "documents": documents,
         "changes": [
             {"repo": s.new, "kind": c.kind, "old": c.old, "new": c.new} for s in plan.subjects for c in s.changes
         ],
@@ -6734,8 +6614,7 @@ def _update_matrix_names(cfg: Config, plan: _NamesPlan) -> list[str]:
 
     A package entry is named by the distribution, so a distribution that changes re-keys its
     entry and both ends of every relationship it has; an entry already under the new name is
-    left. The vault documents are not read here: the filing-clerk changes them, and the steward
-    then reads the changed ones into the matrix (`atw-matrix sync-documents --paths`).
+    left.
 
     Returns:
         A line for each matrix command run, or that failed.
@@ -7331,9 +7210,7 @@ def cmd_deprecate(args: argparse.Namespace, cfg: Config) -> int:
 
     The rename to its deprecated- name dates the deprecation; every open pull request is
     closed with the deprecation comment; its GitNexus group member is removed and the group's
-    contracts rebuilt, so a deprecated repo is never indexed with the fleet. The vault
-    documents that still carry the old name (in the folders the config's `rename.documents`
-    names) are reported under `documents`, never edited: the filing-clerk changes them.
+    contracts rebuilt, so a deprecated repo is never indexed with the fleet.
 
     The clone is deleted only when it holds no work that exists only on this machine
     (uncommitted or untracked files, a stash, commits on no remote branch, or such work in
@@ -7360,9 +7237,6 @@ def cmd_deprecate(args: argparse.Namespace, cfg: Config) -> int:
     r = st.local.get(name) or st.local.get(new)
 
     def after(res: dict[str, object], steps: list[str]) -> bool:
-        docs = _repository_documents(cfg, name, new)
-        res["documents"] = _documents_record(docs)
-        steps.extend(_documents_lines(docs))
         ok = _close_repo_prs(cfg, name if args.dry_run else new, args.dry_run, res, steps)
         unregistered, group_steps = _unregister_steps(cfg, {name, new}, args.dry_run, res)
         steps.extend(group_steps)

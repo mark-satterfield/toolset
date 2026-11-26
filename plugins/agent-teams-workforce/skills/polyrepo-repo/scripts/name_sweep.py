@@ -118,11 +118,10 @@ class Rule:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class SweepTarget:
-    """One folder a sweep reads: its label, the folder, and the paths inside it the sweep is limited to."""
+    """One folder a sweep reads: its label and the folder."""
 
     label: str
     root: Path
-    paths: tuple[str, ...] = ()
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -616,36 +615,6 @@ def build_rules(changes: Sequence[NameChange], holder: str) -> list[Rule]:
     return rules
 
 
-def build_document_rules(changes: Sequence[NameChange], repository_of: dict[str, str]) -> list[Rule]:
-    """Build the rules that find the old names in the architecture documents, matched only where they are names.
-
-    A rename reports the documents these rules match and edits none of them: every vault edit
-    is the filing-clerk's. A document says a published package, an import package or a source
-    folder in prose and in code blocks. The `src/` path and a distinctive import name are matched
-    as in code. A generic import name is matched only as an `import` or `from` line or in a
-    quoted dotted path. A distribution is matched as the whole word, unless it is spelled like
-    the repository that publishes it, because that is the document's reference to the repository.
-    `repository_of` maps each change's old name to the repository it belongs to, by its label.
-
-    Returns:
-        The rules, none limited to a repository.
-
-    """
-    rules: list[Rule] = []
-    for c in changes:
-        match c.kind:
-            case "distribution":
-                if c.old != repository_of.get(change_label(c)):
-                    rules.append(_hyphen_rule(c))
-            case "import-package":
-                rules.extend(dataclasses.replace(r, only_in=None) for r in _package_rules(c, "") if r.basenames is None)
-            case "repository" | "stack" | "stack-file":
-                rules.append(_hyphen_rule(c))
-            case _:
-                assert_never(c.kind)
-    return rules
-
-
 def _applicable(rules: Sequence[Rule], rel: str, excludes: Sequence[str]) -> list[Rule]:
     """Pick the rules that may edit one file.
 
@@ -724,7 +693,7 @@ def sweep_repo(
     """Find, and with `write` make, every edit the rules call for in one repository.
 
     Only tracked text files are read: a fixed-string `git grep` narrows them to the files that
-    hold an old name first. A target with `paths` reads only those folders.
+    hold an old name first.
 
     Returns:
         One edit per file that changes, in path order.
@@ -740,8 +709,6 @@ def sweep_repo(
     args = ["grep", "--null", "-l", "-I", "-i", "-F"]
     for needle in sorted({r.needle for r in live}):
         args += ["-e", needle]
-    if target.paths:
-        args += ["--", *target.paths]
     code, out, err = git(root, args)
     if code == GREP_LIST_NONE:
         return []
