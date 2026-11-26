@@ -674,14 +674,15 @@ yields one Spec/Story pair per repository, all beneath the single Epic." and "Us
 SkillSpoke SDLC are recorded ONLY as Beads issues, produced at task decomposition".
 [requirements/pipelines.md](../requirements/pipelines.md): "the Tasks under each Story, scored and
 ordered". [requirements/matrix.md](../requirements/matrix.md) R41: "A Task states in full what it
-builds, using the matrix's ids for the stack, the components and the shared capabilities". The
-owner: "the task should be detailed so that the build doesn't need to guess or interpret or decide
+builds, using the matrix's ids for the stack, the components and the shared capabilities".
+"the task should be detailed so that the build doesn't need to guess or interpret or decide
 on how to do anything that was already concluded upstream in the elaboration (and architecture)
 pipeline. And when I say task, I also mean spec.", "all details do not need to be copied into the
 tasks and specs (file paths, URLs, etc. can be used to point to the more detailed information)",
 "I don't want to encourage an agent to start naming things, when the names should have already
 been provided in the task (or spec).", "The matrix does not include stories and tasks (it isn't
-a build tracker)" and "the architecture, spec and tasks writers shouldn't try enforcing coding".
+a build tracker)".
+The architecture, spec and Tasks writers do not enforce coding.
 
 ```mermaid
 flowchart TD
